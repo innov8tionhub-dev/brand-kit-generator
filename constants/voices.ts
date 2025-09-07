@@ -1,6 +1,12 @@
 export type VoiceOption = {
   id: string;
   name: string;
+  previewUrl?: string;
+  category?: string;
+  description?: string;
+  accent?: string;
+  gender?: string;
+  age?: string;
 };
 
 // Curated examples. You can replace these with voices from your ElevenLabs account.

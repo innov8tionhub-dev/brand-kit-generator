@@ -25,3 +25,24 @@ export function downloadBase64(base64: string, filename: string, mime = 'image/p
   a.remove();
 }
 
+export function isUrlLike(s: string) {
+  return /^https?:\/\//i.test(s);
+}
+
+export function toImageSrc(s: string) {
+  return isUrlLike(s) ? s : `data:image/png;base64,${s}`;
+}
+
+export async function fetchImageAsBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.split(',')[1]);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+

@@ -4,6 +4,8 @@ import { Redis } from '@upstash/redis';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { fal } from '@fal-ai/client';
 import { randomUUID } from 'crypto';
+import { getDb } from '../db/client';
+import { shares as sharesTable, shareAssets as shareAssetsTable } from '../db/schema';
 
 // Lazy singletons
 let genAI: GoogleGenAI | null = null;
@@ -138,6 +140,44 @@ export default async function handler(req: any, res: any) {
         return res.json({ image: transparentPng, warning: 'No image data returned by model' });
       }
       return res.json({ image });
+    }
+
+    if (pathname === '/api/gemini/logo-variants' && method === 'POST') {
+      const body = await json(req);
+      const { name, description, keywords } = body || {};
+      const ai = getGenAI();
+      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
+
+      const mkPrompt = (variant: 'primary'|'secondary'|'submark') => {
+        const common = `Brand: ${name}. About: ${description}. Vibe: ${keywords}. Clean vector aesthetic, flat 2D, high contrast, no text, no watermark, centered on neutral #f0f0f0 background.`;
+        if (variant === 'primary') return `Primary logo mark. ${common} Balanced symbol suitable as main mark.`;
+        if (variant === 'secondary') return `Secondary logo mark. ${common} Alternate lockup or simplified variation that complements the primary.`;
+        return `Submark logo. ${common} Monogram/circular badge variant derived from the primary mark.`;
+      };
+
+      const extractImage = (response: any) => {
+        const candidates = response?.candidates || [];
+        for (const c of candidates) {
+          const parts = c?.content?.parts || [];
+          for (const p of parts) if (p?.inlineData?.data) return p.inlineData.data;
+        }
+        return null;
+      };
+      const tryOnce = async (p: string) => {
+        try {
+          const response: any = await getGenAI()!.models.generateContent({
+            model: GEMINI_IMAGE_MODEL,
+            contents: { parts: [{ text: p }] },
+            config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+          });
+          return extractImage(response);
+        } catch { return null; }
+      };
+
+      const primary = (await tryOnce(mkPrompt('primary'))) || '';
+      const secondary = (await tryOnce(mkPrompt('secondary'))) || primary;
+      const submark = (await tryOnce(mkPrompt('submark'))) || primary;
+      return res.json({ primary: primary || '', secondary, submark });
     }
 
     if (pathname === '/api/gemini/palette' && method === 'POST') {
@@ -283,13 +323,55 @@ export default async function handler(req: any, res: any) {
       return res.json({ script: jsonOut.script || '', voiceover: jsonOut.voiceover || '' });
     }
 
+    if (pathname === '/api/gemini/video-prompt' && method === 'POST') {
+      const body = await json(req);
+      const { name, script, aspect_ratio = '16:9' } = body || {};
+      const ai = getGenAI();
+      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
+      if (!script) return res.status(400).json({ error: 'Missing script' });
+      const allowed = new Set(['16:9','9:16','1:1']);
+      const ar = allowed.has(aspect_ratio) ? aspect_ratio : '16:9';
+      const sys = `Create a concise, production-ready single prompt for an AI video generator (fal.ai Veo-3-Fast).
+Return ONLY the prompt text, no quotes or formatting.
+Keep it under 600 characters.
+Include: high-level visual style, subject/action, camera motion, pacing, mood, color cues, and safe framing for ${ar}.
+If brand name is provided, tastefully weave it as on-screen text cues without quotes.`;
+      try {
+        const resp: any = await ai.models.generateContent({ model: GEMINI_TEXT_MODEL, contents: [sys, `Brand: ${name || 'Acme'}` , `Ad script: ${script}`] });
+        const text = resp?.text || resp?.candidates?.[0]?.content?.parts?.find((p: any)=>p.text)?.text || '';
+        return res.json({ prompt: (text || script).trim() });
+      } catch {
+        return res.json({ prompt: script });
+      }
+    }
+
     // --- ElevenLabs routes ---
     if (pathname === '/api/elevenlabs/voices' && method === 'GET') {
       if (!ELEVENLABS_API_KEY) return res.json({ voices: [] });
       const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': ELEVENLABS_API_KEY } });
       if (!r.ok) return res.json({ voices: [] });
       const j = await r.json();
-      const voices = (j.voices || []).map((v: any) => ({ id: v.voice_id, name: v.name, previewUrl: v.preview_url || v.samples?.[0]?.preview_url || undefined }));
+      // Extract at least 10 voices, prioritizing those with preview URLs
+      const allVoices = (j.voices || []).map((v: any) => ({
+        id: v.voice_id,
+        name: v.name,
+        previewUrl: v.preview_url || v.samples?.[0]?.preview_url || undefined,
+        category: v.category || 'generated',
+        description: v.description || '',
+        accent: v.labels?.accent || '',
+        gender: v.labels?.gender || '',
+        age: v.labels?.age || ''
+      }));
+      
+      // Sort voices: prioritize those with preview URLs, then by name
+      const sortedVoices = allVoices.sort((a: any, b: any) => {
+        if (a.previewUrl && !b.previewUrl) return -1;
+        if (!a.previewUrl && b.previewUrl) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      // Return at least 10 voices (or all if less than 10 available)
+      const voices = sortedVoices.slice(0, Math.max(10, sortedVoices.length));
       return res.json({ voices });
     }
 
@@ -328,6 +410,7 @@ export default async function handler(req: any, res: any) {
       const safe = {
         name: bk.name,
         logo: bk.logo,
+        logos: bk.logos,
         colorPalette: bk.colorPalette,
         typography: bk.typography,
         imagery: bk.imagery,
@@ -342,6 +425,31 @@ export default async function handler(req: any, res: any) {
       if (userId) {
         try { await r.sadd(`user:${userId}:shares`, id); } catch {}
       }
+
+      // Persist to DB if configured
+      try {
+        const db = getDb();
+        if (db && process.env.DATABASE_URL) {
+          await db.insert(sharesTable).values({ id, userId: userId || null, name: bk.name });
+          const assets: any[] = [];
+          if (safe.logos) {
+            assets.push(
+              { id: randomUUID(), shareId: id, kind: 'logo_primary', url: safe.logos.primary },
+              { id: randomUUID(), shareId: id, kind: 'logo_secondary', url: safe.logos.secondary },
+              { id: randomUUID(), shareId: id, kind: 'logo_submark', url: safe.logos.submark },
+            );
+          } else if (safe.logo) {
+            assets.push({ id: randomUUID(), shareId: id, kind: 'logo_primary', url: safe.logo });
+          }
+          (safe.imagery || []).forEach((u: string, i: number) => assets.push({ id: randomUUID(), shareId: id, kind: `imagery_${i+1}`, url: u }));
+          (safe.socialBackdrops || []).forEach((bg: any) => assets.push({ id: randomUUID(), shareId: id, kind: `backdrop_${bg.platform}`, url: bg.image, extra: { platform: bg.platform } }));
+          if (safe.adVideo?.url) assets.push({ id: randomUUID(), shareId: id, kind: 'ad_video', url: safe.adVideo.url, extra: { aspectRatio: safe.adVideo.aspectRatio } });
+          if (assets.length) await db.insert(shareAssetsTable).values(assets);
+        }
+      } catch (e) {
+        console.error('DB insert failed', e);
+      }
+
       return res.json({ id });
     }
 
@@ -386,8 +494,10 @@ export default async function handler(req: any, res: any) {
       ensureFal();
       if (!process.env.FAL_AI_KEY) return res.status(500).json({ error: 'FAL not configured' });
       const body = await json(req);
-      const { prompt, aspect_ratio = '16:9' } = body || {};
+      let { prompt, aspect_ratio = '16:9' } = body || {};
       if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+      const allowed = new Set(['16:9','9:16','1:1']);
+      if (!allowed.has(aspect_ratio)) aspect_ratio = '16:9';
       const result = await fal.subscribe('fal-ai/veo3/fast', { input: { prompt, aspect_ratio }, logs: false });
       return res.json({ data: result.data, requestId: result.requestId });
     }

@@ -47,6 +47,13 @@ See .env.example for the full list and descriptions. Key ones:
 - Configure environment variables in Vercel → Settings → Environment Variables
 - Deploy as usual; ensure your frontend points to the same /api paths
 
+### Database (optional but recommended)
+- Set DATABASE_URL to a Neon Postgres URL to persist shares and their asset URLs
+- When set, the app will insert records into two tables using Drizzle ORM (serverless function) or direct SQL (dev server):
+  - shares(id, user_id, name, created_at)
+  - share_assets(id, share_id, kind, url, extra, created_at)
+- Migrations: a `drizzle.config.ts` is included if you want to generate SQL migrations locally with drizzle-kit
+
 ### Available API routes
 - POST /api/gemini/logo
 - POST /api/gemini/palette
@@ -75,4 +82,6 @@ See .env.example for the full list and descriptions. Key ones:
 ## Troubleshooting
 - TTS/music issues: ensure ELEVENLABS_API_KEY is valid; UI will gracefully degrade
 - Video generation: ensure FAL_AI_KEY is set; keep prompts short to avoid timeouts
+- R2 uploads: verify CLOUDFLARE_ACCOUNT_ID, R2_UPLOAD_IMAGE_ACCESS_KEY_ID, R2_UPLOAD_IMAGE_SECRET_ACCESS_KEY, R2_UPLOAD_IMAGE_BUCKET_NAME
+- Database: set DATABASE_URL; the app auto-creates tables on the dev server; on Vercel, use existing tables or run migrations
 - Rate limit reached: set RATE_LIMIT_DISABLED=true for demos or raise the limit

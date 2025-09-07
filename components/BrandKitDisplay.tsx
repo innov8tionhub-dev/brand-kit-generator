@@ -3,7 +3,7 @@ import React from 'react';
 import type { BrandKit } from '../types';
 import { Card } from './Card';
 import { downloadBrandKit } from '../utils/downloadBrandKit';
-import { downloadBase64 } from '../utils/image';
+import { downloadBase64, toImageSrc, isUrlLike, fetchImageAsBase64 } from '../utils/image';
 import { showToast } from '../utils/toast';
 import { editImage, generateAdVideo } from '../services/geminiService';
 
@@ -48,30 +48,64 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
         <div className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <Card title="Logo" icon={<LogoIcon />} className="lg:col-span-1 md:col-span-2">
-                     <div className="bg-gray-200 p-6 rounded-lg flex items-center justify-center h-48 relative">
-                        <img src={`data:image/png;base64,${brandKit.logo}`} alt="Generated Logo" className="max-h-full max-w-full" />
-                        <div className="absolute bottom-2 right-2 flex gap-2">
-                          <button
-                            onClick={() => { downloadBase64(brandKit.logo, `${brandKit.name}-logo.png`, 'image/png'); showToast('Logo downloaded'); }}
-                            className="px-3 py-1 text-xs rounded bg-brand-yellow text-black hover:bg-brand-yellow/90 focus:outline-none focus:ring-2 focus:ring-brand-blue/60"
-                          >Download</button>
-                          {!readOnly && (
+                     {brandKit.logos ? (
+                       <div className="grid grid-cols-1 gap-4">
+                         {(['primary','secondary','submark'] as const).map((key) => (
+                           <div key={key} className="bg-gray-200 p-6 rounded-lg flex items-center justify-center h-40 relative">
+<img src={toImageSrc((brandKit.logos as any)[key])} alt={`${key} logo`} className="max-h-full max-w-full" />
+                             <div className="absolute bottom-2 right-2 flex gap-2">
+                               <button
+                                 onClick={() => { downloadBase64((brandKit.logos as any)[key], `${brandKit.name}-logo-${key}.png`, 'image/png'); showToast('Logo downloaded'); }}
+                                 className="px-3 py-1 text-xs rounded bg-brand-yellow text-black hover:bg-brand-yellow/90 focus:outline-none focus:ring-2 focus:ring-brand-blue/60"
+                               >Download</button>
+                               {!readOnly && (
+                                 <button
+                                   onClick={async () => {
+                                     const instruction = prompt(`Describe how to edit the ${key} logo`);
+                                     if (!instruction || !onUpdate) return;
+                                     try {
+const base = isUrlLike((brandKit.logos as any)[key]) ? await fetchImageAsBase64((brandKit.logos as any)[key]) : (brandKit.logos as any)[key];
+                                       const edited = await editImage(base, `Modify ${key} logo for ${brandKit.name}: ${instruction}. Keep it text-free, vector-like and minimal.`);
+                                       onUpdate({ ...brandKit, logos: { ...brandKit.logos!, [key]: edited }, logo: key === 'primary' ? edited : brandKit.logo });
+                                     } catch { showToast('Edit failed'); }
+                                   }}
+                                   className="px-3 py-1 text-xs rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60"
+                                 >
+                                   Edit
+                                 </button>
+                               )}
+                             </div>
+                             <span className="absolute top-2 left-2 text-[10px] uppercase bg-gray-900/70 text-white px-2 py-0.5 rounded">{key}</span>
+                           </div>
+                         ))}
+                       </div>
+                     ) : (
+                       <div className="bg-gray-200 p-6 rounded-lg flex items-center justify-center h-48 relative">
+<img src={toImageSrc(brandKit.logo)} alt="Generated Logo" className="max-h-full max-w-full" />
+                          <div className="absolute bottom-2 right-2 flex gap-2">
                             <button
-                              onClick={async () => {
-                                const instruction = prompt('Describe how to edit the logo (e.g., more minimal, increase contrast, add circular motif)');
-                                if (!instruction || !onUpdate) return;
-                                try {
-                                  const edited = await editImage(brandKit.logo, `Modify logo for ${brandKit.name}: ${instruction}. Keep it text-free, vector-like and minimal.`);
-                                  onUpdate({ ...brandKit, logo: edited });
-                                } catch (e) { showToast('Edit failed'); }
-                              }}
-                              className="px-3 py-1 text-xs rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60"
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </div>
-                    </div>
+                              onClick={() => { downloadBase64(brandKit.logo, `${brandKit.name}-logo.png`, 'image/png'); showToast('Logo downloaded'); }}
+                              className="px-3 py-1 text-xs rounded bg-brand-yellow text-black hover:bg-brand-yellow/90 focus:outline-none focus:ring-2 focus:ring-brand-blue/60"
+                            >Download</button>
+                            {!readOnly && (
+                              <button
+                                onClick={async () => {
+                                  const instruction = prompt('Describe how to edit the logo (e.g., more minimal, increase contrast, add circular motif)');
+                                  if (!instruction || !onUpdate) return;
+                                  try {
+const base = isUrlLike(brandKit.logo) ? await fetchImageAsBase64(brandKit.logo) : brandKit.logo;
+                                  const edited = await editImage(base, `Modify logo for ${brandKit.name}: ${instruction}. Keep it text-free, vector-like and minimal.`);
+                                    onUpdate({ ...brandKit, logo: edited });
+                                  } catch (e) { showToast('Edit failed'); }
+                                }}
+                                className="px-3 py-1 text-xs rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                      </div>
+                     )}
                 </Card>
 
                 <Card title="Color Palette" icon={<PaletteIcon />} className="lg:col-span-2 md:col-span-2">
@@ -108,7 +142,7 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {brandKit.imagery.map((img, index) => (
                             <div key={index} className="relative">
-                              <img src={`data:image/png;base64,${img}`} alt={`Brand Imagery ${index + 1}`} className="rounded-lg w-full h-auto object-cover aspect-video" />
+<img src={toImageSrc(img)} alt={`Brand Imagery ${index + 1}`} className="rounded-lg w-full h-auto object-cover aspect-video" />
                               {!readOnly && (
                                 <div>
                                 <div className="absolute top-2 left-2 flex gap-1">
@@ -116,7 +150,8 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
                                     <button key={q} onClick={async () => {
                                       if (!onUpdate) return;
                                       try {
-                                        const edited = await editImage(img, q);
+const base = isUrlLike(img) ? await fetchImageAsBase64(img) : img;
+                                        const edited = await editImage(base, q);
                                         const next = [...brandKit.imagery];
                                         next[index] = edited;
                                         onUpdate({ ...brandKit, imagery: next });
@@ -131,7 +166,8 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
                                       const instruction = prompt('Describe how to edit this image (e.g., warmer colors, add subtle texture)');
                                       if (!instruction || !onUpdate) return;
                                       try {
-                                        const edited = await editImage(img, instruction);
+const base = isUrlLike(img) ? await fetchImageAsBase64(img) : img;
+                                        const edited = await editImage(base, instruction);
                                         const next = [...brandKit.imagery];
                                         next[index] = edited;
                                         onUpdate({ ...brandKit, imagery: next });
@@ -159,32 +195,88 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
                                     <p className="text-xs text-gray-400 mt-2">Voiceover text (read by TTS): {brandKit.ad.voiceoverText}</p>
                                 )}
                             </div>
-                            {brandKit.ad.audioUrl ? (
+                            {/* Voiceover Generation Section */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-sm text-gray-400">Ad Voiceover</h4>
+                                {!readOnly && brandKit.ad.voiceoverText && (
+                                  <button
+                                    onClick={async () => {
+                                      if (!onUpdate || !brandKit.ad?.voiceoverText || !brandKit.ad?.voiceId) return;
+                                      try {
+                                        showToast('Generating voiceover...');
+                                        const { generateVoiceover } = await import('../services/elevenLabsService');
+                                        const audio = await generateVoiceover(
+                                          brandKit.ad.voiceoverText,
+                                          `${brandKit.name} - Ad Voiceover`,
+                                          brandKit.ad.voiceId
+                                        );
+                                        onUpdate({ 
+                                          ...brandKit, 
+                                          ad: { 
+                                            ...brandKit.ad, 
+                                            audioUrl: audio.url,
+                                            ttsError: undefined 
+                                          } 
+                                        });
+                                        showToast('Voiceover generated');
+                                      } catch {
+                                        showToast('Voiceover generation failed');
+                                        onUpdate({ 
+                                          ...brandKit, 
+                                          ad: { 
+                                            ...brandKit.ad, 
+                                            ttsError: 'Failed to generate voiceover' 
+                                          } 
+                                        });
+                                      }
+                                    }}
+                                    className="px-3 py-1 text-xs rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60"
+                                  >
+                                    {brandKit.ad.audioUrl ? 'Regenerate' : 'Generate'} Voiceover
+                                  </button>
+                                )}
+                              </div>
+                              {brandKit.ad.audioUrl ? (
                                 <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
                                     <p className="font-semibold flex-shrink-0">Ad Voiceover {brandKit.ad.voiceName ? `(${brandKit.ad.voiceName})` : ''}</p>
                                     <audio controls src={brandKit.ad.audioUrl} className="w-full">Your browser does not support the audio element.</audio>
                                 </div>
-                            ) : brandKit.ad.ttsError ? (
-                                <p className="text-yellow-400">{brandKit.ad.ttsError}</p>
-                            ) : null}
+                              ) : brandKit.ad.ttsError ? (
+                                <div className="p-3 bg-red-900/20 border border-red-800 rounded-lg">
+                                  <p className="text-red-400 text-sm">{brandKit.ad.ttsError}</p>
+                                </div>
+                              ) : brandKit.ad.voiceoverText ? (
+                                <div className="p-3 bg-gray-700/30 rounded-lg border border-dashed border-gray-600">
+                                  <p className="text-sm text-gray-500 text-center">No voiceover generated yet</p>
+                                </div>
+                              ) : null}
+                            </div>
 
                             {brandKit.adVideo ? (
                               <div className="space-y-2">
                                 <video controls src={brandKit.adVideo.url} className="w-full rounded" />
-                                <p className="text-xs text-gray-400">Aspect {brandKit.adVideo.aspectRatio}</p>
+                                <p className="text-xs text-gray-400">
+                                  {brandKit.adVideo.aspectRatio === '16:9' && 'YouTube Landscape (16:9)'}
+                                  {brandKit.adVideo.aspectRatio === '9:16' && 'TikTok/Instagram Reels (9:16)'}
+                                  {brandKit.adVideo.aspectRatio === '1:1' && 'Instagram Square (1:1)'}
+                                </p>
                               </div>
                             ) : (!readOnly && (
                               <div className="flex items-center gap-2">
                                 <select id="adVideoAspect" className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">
-                                  <option value="16:9">16:9</option>
-                                  <option value="9:16">9:16</option>
-                                  <option value="1:1">1:1</option>
+                                  <option value="16:9">YouTube Landscape (16:9)</option>
+                                  <option value="9:16">TikTok/Instagram Reels (9:16)</option>
+                                  <option value="1:1">Instagram Square (1:1)</option>
                                 </select>
                                 <button className="px-3 py-1 text-sm rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60" onClick={async (e) => {
                                   const sel = (e.currentTarget.previousSibling as HTMLSelectElement);
                                   const ar = (sel?.value || '16:9') as '16:9'|'9:16'|'1:1';
                                   try {
-                                    const prompt = brandKit.ad?.copyScript || brandKit.ad?.voiceoverText || '';
+                                    const script = brandKit.ad?.copyScript || brandKit.ad?.voiceoverText || '';
+                                    const { generateVideoPrompt, generateAdVideo } = await import('../services/geminiService');
+                                    showToast('Crafting video prompt...');
+                                    const prompt = await generateVideoPrompt(brandKit.name, script, ar);
                                     showToast('Generating video...');
                                     const vid = await generateAdVideo(prompt, ar);
                                     onUpdate && onUpdate({ ...brandKit, adVideo: vid });
@@ -204,7 +296,7 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {brandKit.socialBackdrops.map((bg) => (
                                 <div key={bg.platform} className="space-y-2">
-                                    <img src={`data:image/png;base64,${bg.image}`} alt={`${bg.platform} backdrop`} className="rounded-lg w-full h-auto object-cover" />
+<img src={toImageSrc(bg.image)} alt={`${bg.platform} backdrop`} className="rounded-lg w-full h-auto object-cover" />
                                     <div className="flex items-center justify-between">
                                       <p className="text-xs text-gray-400 capitalize">{bg.platform}</p>
                                       <button className="text-xs underline text-brand-blue hover:text-brand-blue/90" onClick={() => { downloadBase64(bg.image, `${brandKit.name}-${bg.platform}.jpg`, 'image/jpeg'); showToast('Backdrop downloaded'); }}>Download</button>
@@ -217,18 +309,116 @@ export const BrandKitDisplay: React.FC<BrandKitDisplayProps> = ({ brandKit, onRe
                 
                  <Card title="Audio Assets" icon={<MusicIcon />} className="lg:col-span-3">
                     <div className="space-y-4">
-                        {brandKit.audio.intro.url ? (
-                          <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
-                              <p className="font-semibold flex-shrink-0">{brandKit.audio.intro.name}</p>
-                              <audio controls src={brandKit.audio.intro.url} className="w-full">Your browser does not support the audio element.</audio>
+                        {/* Intro Music */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm text-gray-400">Intro Music</h4>
+                            {!readOnly && (
+                              <button 
+                                onClick={async () => {
+                                  if (!onUpdate) return;
+                                  try {
+                                    showToast('Generating intro music...');
+                                    const { generateMusic } = await import('../services/elevenLabsService');
+                                    const prompt = `upbeat energetic intro music for ${brandKit.name}, ${brandKit.colorPalette?.[0] || 'modern'} brand vibe`;
+                                    const intro = await generateMusic(prompt, `${brandKit.name} - Intro`);
+                                    onUpdate({ ...brandKit, audio: { ...brandKit.audio, intro } });
+                                    showToast('Intro music generated');
+                                  } catch {
+                                    showToast('Audio generation failed');
+                                  }
+                                }}
+                                className="px-3 py-1 text-xs rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60"
+                              >
+                                {brandKit.audio.intro.url ? 'Regenerate' : 'Generate'} Intro
+                              </button>
+                            )}
                           </div>
-                        ) : null}
-                        {brandKit.audio.outro.url ? (
-                          <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
-                              <p className="font-semibold flex-shrink-0">{brandKit.audio.outro.name}</p>
-                              <audio controls src={brandKit.audio.outro.url} className="w-full">Your browser does not support the audio element.</audio>
+                          {brandKit.audio.intro.url ? (
+                            <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
+                                <p className="font-semibold flex-shrink-0">{brandKit.audio.intro.name}</p>
+                                <audio controls src={brandKit.audio.intro.url} className="w-full">Your browser does not support the audio element.</audio>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-gray-700/30 rounded-lg border border-dashed border-gray-600">
+                              <p className="text-sm text-gray-500 text-center">No intro music generated yet</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Outro Music */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm text-gray-400">Outro Music</h4>
+                            {!readOnly && (
+                              <button 
+                                onClick={async () => {
+                                  if (!onUpdate) return;
+                                  try {
+                                    showToast('Generating outro music...');
+                                    const { generateMusic } = await import('../services/elevenLabsService');
+                                    const prompt = `calming outro music for ${brandKit.name}, fade out style, ${brandKit.colorPalette?.[0] || 'modern'} brand vibe`;
+                                    const outro = await generateMusic(prompt, `${brandKit.name} - Outro`);
+                                    onUpdate({ ...brandKit, audio: { ...brandKit.audio, outro } });
+                                    showToast('Outro music generated');
+                                  } catch {
+                                    showToast('Audio generation failed');
+                                  }
+                                }}
+                                className="px-3 py-1 text-xs rounded bg-brand-blue hover:bg-brand-blue/90 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow/60"
+                              >
+                                {brandKit.audio.outro.url ? 'Regenerate' : 'Generate'} Outro
+                              </button>
+                            )}
                           </div>
-                        ) : null}
+                          {brandKit.audio.outro.url ? (
+                            <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
+                                <p className="font-semibold flex-shrink-0">{brandKit.audio.outro.name}</p>
+                                <audio controls src={brandKit.audio.outro.url} className="w-full">Your browser does not support the audio element.</audio>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-gray-700/30 rounded-lg border border-dashed border-gray-600">
+                              <p className="text-sm text-gray-500 text-center">No outro music generated yet</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Custom Audio Generation */}
+                        {!readOnly && (
+                          <div className="pt-4 border-t border-gray-700">
+                            <h4 className="text-sm text-gray-400 mb-3">Generate Custom Audio</h4>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="e.g., background music for product demo"
+                                className="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm text-white placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500"
+                                id="customAudioPrompt"
+                              />
+                              <button
+                                onClick={async () => {
+                                  if (!onUpdate) return;
+                                  const input = document.getElementById('customAudioPrompt') as HTMLInputElement;
+                                  const prompt = input?.value.trim();
+                                  if (!prompt) return;
+                                  try {
+                                    showToast('Generating custom audio...');
+                                    const { generateMusic } = await import('../services/elevenLabsService');
+                                    const customAudio = await generateMusic(prompt, `${brandKit.name} - Custom Audio`);
+                                    // Add custom audio to the audio assets (you might want to extend the AudioAsset type to support custom audio)
+                                    showToast('Custom audio generated');
+                                    input.value = '';
+                                  } catch {
+                                    showToast('Custom audio generation failed');
+                                  }
+                                }}
+                                className="px-4 py-2 text-sm rounded bg-brand-yellow text-black hover:bg-brand-yellow/90 focus:outline-none focus:ring-2 focus:ring-brand-blue/60"
+                              >
+                                Generate
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">Describe what kind of audio you want to generate for your brand</p>
+                          </div>
+                        )}
                     </div>
                 </Card>
             </div>

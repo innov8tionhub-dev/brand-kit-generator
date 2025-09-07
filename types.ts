@@ -41,9 +41,16 @@ export type SocialBackdrop = {
   image: string; // base64
 };
 
+export interface LogoVariants {
+  primary: string;   // main mark
+  secondary: string; // alternate lockup or simplified mark
+  submark: string;   // monogram / circular submark
+}
+
 export interface BrandKit {
   name: string;
-  logo: string; // base64 string
+  logo: string; // base64 string (kept for backward-compat; equal to logos.primary)
+  logos?: LogoVariants; // optional variants
   colorPalette: ColorPalette;
   typography: Typography;
   imagery: string[]; // array of base64 strings

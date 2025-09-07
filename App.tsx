@@ -9,7 +9,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { MyShares } from './components/MyShares';
 import { Header } from './components/Header';
 import { Loader } from './components/Loader';
-import { generateLogo, generateColorPalette, generateTypography, generateBrandImagery, generateAdCopy, generateSocialBackdrops } from './services/geminiService';
+import { generateLogo, generateColorPalette, generateTypography, generateBrandImagery, generateAdCopy, generateSocialBackdrops, generateLogoVariants } from './services/geminiService';
 import { generateMusic, generateVoiceover } from './services/elevenLabsService';
 import type { BrandInput, BrandKit } from './types';
 import { GenerationStatus } from './types';
@@ -61,8 +61,8 @@ const App: React.FC = () => {
 
         try {
             // Generate visuals in parallel
-            const [logo, colorPalette, typography, imagery, socialBackdrops] = await Promise.all([
-                generateLogo(data.name, data.description, data.keywords),
+            const [logos, colorPalette, typography, imagery, socialBackdrops] = await Promise.all([
+                generateLogoVariants(data.name, data.description, data.keywords),
                 generateColorPalette(data.description, data.keywords),
                 generateTypography(data.description, data.keywords),
                 generateBrandImagery(data.description, data.keywords),
@@ -114,7 +114,8 @@ const App: React.FC = () => {
 
             setBrandKit({
                 name: data.name,
-                logo,
+                logo: logos.primary,
+                logos,
                 colorPalette,
                 typography,
                 imagery,
@@ -197,7 +198,7 @@ const App: React.FC = () => {
             </ErrorBoundary>
             </main>
              <footer className="text-center py-6 text-gray-500 text-sm">
-                <p>Powered by Google Gemini (image model: nanobanana),& ElevenLabs, And FAL AI.</p>
+                <p>Powered by Google Gemini (Nano Banana), ElevenLabs, and FAL AI (Veo-3-Fast).</p>
             </footer>
         </div>
     );

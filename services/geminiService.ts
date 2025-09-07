@@ -1,17 +1,13 @@
 
-import type { Typography, ColorPalette } from '../types';
+import type { Typography, ColorPalette, LogoVariants } from '../types';
 import { resizeBase64ToAspect } from '../utils/image';
 
 // Client calls secured server APIs. No keys are used in the browser.
 
 export const generateLogo = async (name: string, description: string, keywords: string): Promise<string> => {
-  const r = await fetch('/api/gemini/logo', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description, keywords })
-  });
-  if (!r.ok) throw new Error('Logo generation failed');
-  const { image } = await r.json();
-  return image;
+  // Backward-compat: call variants route and return primary
+  const v = await generateLogoVariants(name, description, keywords);
+  return v.primary;
 };
 
 export const generateColorPalette = async (description: string, keywords: string): Promise<ColorPalette> => {
@@ -49,9 +45,10 @@ export const generateAdCopy = async (
 };
 
 export const generateBrandImagery = async (description: string, keywords: string): Promise<string[]> => {
+  // Enhanced prompt to produce on-brand abstract assets suitable for backgrounds and patterns.
   const r = await fetch('/api/gemini/imagery', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, keywords, count: 2 })
+    body: JSON.stringify({ description, keywords: `${keywords}. Clean brand backgrounds, abstract motifs, subtle geometry, high contrast, ample whitespace. No text, no watermark.`, count: 2 })
   });
   if (!r.ok) throw new Error('Brand imagery generation failed');
   const { images } = await r.json();
@@ -107,4 +104,24 @@ export const generateSocialBackdrops = async (
     }
   }
   return results;
+};
+
+export async function generateVideoPrompt(name: string | undefined, script: string, aspectRatio: '16:9'|'9:16'|'1:1' = '16:9'): Promise<string> {
+  const r = await fetch('/api/gemini/video-prompt', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, script, aspect_ratio: aspectRatio })
+  });
+  if (!r.ok) return script;
+  const { prompt } = await r.json();
+  return prompt || script;
+}
+
+export const generateLogoVariants = async (name: string, description: string, keywords: string): Promise<LogoVariants> => {
+  const r = await fetch('/api/gemini/logo-variants', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description, keywords })
+  });
+  if (!r.ok) throw new Error('Logo variants generation failed');
+  const { primary, secondary, submark } = await r.json();
+  return { primary, secondary, submark };
 };

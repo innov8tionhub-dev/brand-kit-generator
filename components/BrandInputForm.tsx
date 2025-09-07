@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import type { BrandInput } from '../types';
+import type { VoiceOption } from '../constants/voices';
 import { SparklesIcon } from './icons/SparklesIcon';
 import { VOICES as CURATED_VOICES, DEFAULT_VOICE_ID } from '../constants/voices';
 import { fetchVoices } from '../services/elevenLabsService';
@@ -57,7 +58,7 @@ const SelectField: React.FC<{ id: string; label: string; value: string; onChange
 );
 
 export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLoading }) => {
-    const [voiceOptions, setVoiceOptions] = useState<{ id: string; name: string; previewUrl?: string }[]>(CURATED_VOICES);
+    const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>(CURATED_VOICES);
     const audioRef = React.useRef<HTMLAudioElement | null>(null);
     const [formData, setFormData] = useState<BrandInput>({
         name: '',
@@ -96,28 +97,38 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
         onGenerate(formData);
     };
 
-    // Curated voices, but enrich with preview URLs from API when available
+    // Load voices dynamically from ElevenLabs API
     React.useEffect(() => {
         (async () => {
             try {
                 const apiVoices = await fetchVoices();
-                let curated = CURATED_VOICES.map(cv => ({
-                    id: cv.id,
-                    name: cv.name,
-                    previewUrl: apiVoices.find(v => v.id === cv.id)?.previewUrl,
-                }));
-                // Show only voices with preview when possible
-                const withPreview = curated.filter(v => !!v.previewUrl);
-                curated = withPreview.length > 0 ? withPreview : curated;
-                // Prefer voices with previews
-                curated = curated.sort((a,b) => Number(!!b.previewUrl) - Number(!!a.previewUrl));
-                setVoiceOptions(curated);
-                const preferred = curated.find(v => v.previewUrl) || curated[0];
-                setFormData(prev => ({ ...prev, voiceId: preferred.id, voiceName: preferred.name }));
+                if (apiVoices && apiVoices.length > 0) {
+                    // Use all available voices from the API (now returns at least 10)
+                    setVoiceOptions(apiVoices);
+                    // Find first voice with preview or use the first one
+                    const defaultVoice = apiVoices.find(v => v.previewUrl) || apiVoices[0];
+                    setFormData(prev => ({ 
+                        ...prev, 
+                        voiceId: defaultVoice.id, 
+                        voiceName: defaultVoice.name 
+                    }));
+                } else {
+                    // Fallback to curated voices if API fails
+                    setVoiceOptions(CURATED_VOICES);
+                    setFormData(prev => ({ 
+                        ...prev, 
+                        voiceId: DEFAULT_VOICE_ID, 
+                        voiceName: CURATED_VOICES.find(v => v.id === DEFAULT_VOICE_ID)?.name 
+                    }));
+                }
             } catch {
+                // Fallback to curated voices on error
                 setVoiceOptions(CURATED_VOICES);
-                const fallback = CURATED_VOICES[0];
-                setFormData(prev => ({ ...prev, voiceId: fallback.id, voiceName: fallback.name }));
+                setFormData(prev => ({ 
+                    ...prev, 
+                    voiceId: DEFAULT_VOICE_ID, 
+                    voiceName: CURATED_VOICES.find(v => v.id === DEFAULT_VOICE_ID)?.name 
+                }));
             }
         })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,14 +231,24 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                       label="Ad Voice"
                       value={formData.voiceId || ''}
                       onChange={handleVoiceChange}
-                      options={voiceOptions.map(v => ({ value: v.id, label: v.name }))}
+                      options={voiceOptions.map(v => ({ 
+                        value: v.id, 
+                        label: `${v.name}${v.gender ? ` (${v.gender})` : ''}${v.accent ? ` - ${v.accent}` : ''}` 
+                      }))}
                   />
                   <div className="flex items-end gap-2">
                     <button
                       type="button"
                       onClick={() => previewVoice(voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl)}
                       disabled={isPreviewing || !voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl}
-                      className={`px-4 py-2 text-sm rounded-md ${isPreviewing ? 'bg-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'}`}
+                      className={`px-4 py-2 text-sm rounded-md ${
+                        !voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl 
+                          ? 'bg-gray-600 cursor-not-allowed text-gray-400' 
+                          : isPreviewing 
+                            ? 'bg-gray-600 cursor-not-allowed' 
+                            : 'bg-gray-700 hover:bg-gray-600'
+                      }`}
+                      title={!voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl ? 'No preview available for this voice' : ''}
                     >
                       {isPreviewing ? (
                         <span className="inline-flex items-center gap-2">
@@ -235,7 +256,7 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                           Previewing...
                         </span>
                       ) : (
-                        'Preview Voice'
+                        voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl ? 'Preview Voice' : 'No Preview'
                       )}
                     </button>
                     <button

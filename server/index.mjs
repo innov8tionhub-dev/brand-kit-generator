@@ -10,10 +10,12 @@ import { GoogleGenAI, Type, Modality } from '@google/genai';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { randomUUID } from 'crypto';
 import { fal } from '@fal-ai/client';
+import { neon } from '@neondatabase/serverless';
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+// Increase JSON body limit to accommodate base64 images in shares
+app.use(express.json({ limit: '25mb' }));
 
 // Env
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -131,12 +133,54 @@ app.post('/api/gemini/logo', async (req, res) => {
       return res.json({ image: transparentPng, warning: 'No image data returned by model' });
     }
 
-    res.json({ image });
+res.json({ image });
   } catch (e) {
     console.error('Gemini logo route error:', e);
     // Graceful fallback to avoid breaking the flow
     const transparentPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
     res.json({ image: transparentPng, warning: 'Logo fallback due to server error' });
+  }
+});
+
+// Generate primary/secondary/submark logo variants
+app.post('/api/gemini/logo-variants', async (req, res) => {
+  try {
+    if (!genAI) return res.status(500).json({ error: 'Gemini not configured' });
+    const { name, description, keywords } = req.body || {};
+    const mkPrompt = (variant) => {
+      const common = `Brand: ${name}. About: ${description}. Vibe: ${keywords}. Clean vector aesthetic, flat 2D, high contrast, no text, no watermark, centered on neutral #f0f0f0 background.`;
+      if (variant === 'primary') return `Primary logo mark. ${common} Balanced symbol suitable as main mark.`;
+      if (variant === 'secondary') return `Secondary logo mark. ${common} Alternate lockup or simplified variation that complements the primary.`;
+      return `Submark logo. ${common} Monogram/circular badge variant derived from the primary mark.`;
+    };
+    const extractImage = (response) => {
+      const candidates = response?.candidates || [];
+      for (const c of candidates) {
+        const parts = c?.content?.parts || [];
+        for (const p of parts) if (p?.inlineData?.data) return p.inlineData.data;
+      }
+      return null;
+    };
+    const tryOnce = async (prompt) => {
+      try {
+        const response = await genAI.models.generateContent({
+          model: GEMINI_IMAGE_MODEL,
+          contents: { parts: [{ text: prompt }] },
+          config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+        });
+        return extractImage(response);
+      } catch {
+        return null;
+      }
+    };
+
+    const primary = (await tryOnce(mkPrompt('primary'))) || '';
+    const secondary = (await tryOnce(mkPrompt('secondary'))) || primary;
+    const submark = (await tryOnce(mkPrompt('submark'))) || primary;
+    res.json({ primary: primary || '', secondary, submark });
+  } catch (e) {
+    console.error('Logo variants error:', e);
+    res.status(500).json({ error: 'Logo variants failed' });
   }
 });
 
@@ -313,6 +357,30 @@ app.post('/api/gemini/ad-copy', async (req, res) => {
   }
 });
 
+// Generate a concise Veo-3-Fast video prompt from brand + ad script
+app.post('/api/gemini/video-prompt', async (req, res) => {
+  try {
+    if (!genAI) return res.status(500).json({ error: 'Gemini not configured' });
+    const { name, script, aspect_ratio = '16:9' } = req.body || {};
+    if (!script) return res.status(400).json({ error: 'Missing script' });
+    const allowed = new Set(['16:9','9:16','1:1']);
+    const ar = allowed.has(aspect_ratio) ? aspect_ratio : '16:9';
+    const sys = `Create a concise, production-ready single prompt for an AI video generator (fal.ai Veo-3-Fast).
+Return ONLY the prompt text, no quotes or formatting.
+Keep it under 600 characters.
+Include: high-level visual style, subject/action, camera motion, pacing, mood, color cues, and safe framing for ${ar}.
+If brand name is provided, tastefully weave it as on-screen text cues without quotes.`;
+    const response = await genAI.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [sys, `Brand: ${name || 'Acme'}`, `Ad script: ${script}`]
+    });
+    const text = response?.text || response?.candidates?.[0]?.content?.parts?.find((p)=>p.text)?.text || '';
+    res.json({ prompt: (text || script).trim() });
+  } catch (e) {
+    res.json({ prompt: (req.body?.script || '').toString() });
+  }
+});
+
 // ElevenLabs endpoints
 app.get('/api/elevenlabs/voices', async (_req, res) => {
   try {
@@ -371,10 +439,10 @@ app.post('/api/share', async (req, res) => {
   try {
     const bk = req.body?.brandKit;
     if (!bk) return res.status(400).json({ error: 'Missing brandKit' });
-    // Sanitize: remove blob audio URLs; keep metadata and base64 images
     const safe = {
       name: bk.name,
       logo: bk.logo,
+      logos: bk.logos,
       colorPalette: bk.colorPalette,
       typography: bk.typography,
       imagery: bk.imagery,
@@ -390,11 +458,37 @@ app.post('/api/share', async (req, res) => {
     };
     const id = randomUUID();
     SHARE_STORE.set(id, { data: safe, expiresAt: Date.now() + SHARE_TTL_MS });
-    // Index under user if provided
     const userId = (req.headers['x-user-id'] || '').toString();
     if (redis && userId) {
       try { await redis.sadd(`user:${userId}:shares`, id); } catch {}
     }
+
+    // Optional: persist to Neon if DATABASE_URL configured
+    try {
+      if (process.env.DATABASE_URL) {
+        const sql = neon(process.env.DATABASE_URL);
+        await sql`create table if not exists shares (id text primary key, user_id text, name text not null, created_at timestamptz default now() not null)`;
+        await sql`create table if not exists share_assets (id text primary key, share_id text not null references shares(id), kind text not null, url text not null, extra jsonb, created_at timestamptz default now() not null)`;
+        await sql`insert into shares (id, user_id, name) values (${id}, ${userId || null}, ${bk.name})`;
+        const assets = [];
+        if (safe.logos) {
+          assets.push({ id: crypto.randomUUID(), shareId: id, kind: 'logo_primary', url: safe.logos.primary });
+          assets.push({ id: crypto.randomUUID(), shareId: id, kind: 'logo_secondary', url: safe.logos.secondary });
+          assets.push({ id: crypto.randomUUID(), shareId: id, kind: 'logo_submark', url: safe.logos.submark });
+        } else if (safe.logo) {
+          assets.push({ id: crypto.randomUUID(), shareId: id, kind: 'logo_primary', url: safe.logo });
+        }
+        (safe.imagery || []).forEach((u, i) => assets.push({ id: crypto.randomUUID(), shareId: id, kind: `imagery_${i+1}`, url: u }));
+        (safe.socialBackdrops || []).forEach((bg) => assets.push({ id: crypto.randomUUID(), shareId: id, kind: `backdrop_${bg.platform}`, url: bg.image, extra: { platform: bg.platform } }));
+        if (safe.adVideo?.url) assets.push({ id: crypto.randomUUID(), shareId: id, kind: 'ad_video', url: safe.adVideo.url, extra: { aspectRatio: safe.adVideo.aspectRatio } });
+        for (const a of assets) {
+          await sql`insert into share_assets (id, share_id, kind, url, extra) values (${a.id}, ${a.shareId}, ${a.kind}, ${a.url}, ${a.extra || null})`;
+        }
+      }
+    } catch (dbErr) {
+      console.warn('Neon persistence failed (dev server):', dbErr);
+    }
+
     res.json({ id });
   } catch (e) {
     res.status(500).json({ error: 'Share failed' });
@@ -447,8 +541,11 @@ app.post('/api/r2/upload', async (req, res) => {
 app.post('/api/fal/veo3fast', async (req, res) => {
   try {
     if (!process.env.FAL_AI_KEY) return res.status(500).json({ error: 'FAL not configured' });
-    const { prompt, aspect_ratio = '16:9', audio_enabled = true } = req.body || {};
+const { prompt } = req.body || {};
+    let { aspect_ratio = '16:9', audio_enabled = true } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+    const allowed = new Set(['16:9','9:16','1:1']);
+    if (!allowed.has(aspect_ratio)) aspect_ratio = '16:9';
 
     const result = await fal.subscribe('fal-ai/veo3/fast', {
       input: {

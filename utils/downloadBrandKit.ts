@@ -20,6 +20,7 @@ export async function downloadBrandKit(brandKit: BrandKit) {
     name: brandKit.name,
     colorPalette: brandKit.colorPalette,
     typography: brandKit.typography,
+    logos: brandKit.logos ? { ...brandKit.logos } : undefined,
     ad: brandKit.ad ? {
       copyScript: brandKit.ad.copyScript,
       voiceoverText: brandKit.ad.voiceoverText,
@@ -32,19 +33,44 @@ export async function downloadBrandKit(brandKit: BrandKit) {
   };
   zip.file('brandkit.json', JSON.stringify(metadata, null, 2));
 
-  // Logo
+  // Logo(s)
+  const isUrl = (s: string) => /^https?:\/\//i.test(s);
   try {
-    const logoBytes = Uint8Array.from(atob(brandKit.logo), c => c.charCodeAt(0));
-    zip.file('logo.png', logoBytes);
+    if (isUrl(brandKit.logo)) {
+      const buf = await fetchAsArrayBuffer(brandKit.logo);
+      zip.file('logo.png', buf);
+    } else {
+      const logoBytes = Uint8Array.from(atob(brandKit.logo), c => c.charCodeAt(0));
+      zip.file('logo.png', logoBytes);
+    }
   } catch {}
+  if (brandKit.logos) {
+    try {
+      if (isUrl(brandKit.logos.primary)) { zip.file('logo-primary.png', await fetchAsArrayBuffer(brandKit.logos.primary)); }
+      else { const b = Uint8Array.from(atob(brandKit.logos.primary), c => c.charCodeAt(0)); zip.file('logo-primary.png', b); }
+    } catch {}
+    try {
+      if (isUrl(brandKit.logos.secondary)) { zip.file('logo-secondary.png', await fetchAsArrayBuffer(brandKit.logos.secondary)); }
+      else { const b = Uint8Array.from(atob(brandKit.logos.secondary), c => c.charCodeAt(0)); zip.file('logo-secondary.png', b); }
+    } catch {}
+    try {
+      if (isUrl(brandKit.logos.submark)) { zip.file('logo-submark.png', await fetchAsArrayBuffer(brandKit.logos.submark)); }
+      else { const b = Uint8Array.from(atob(brandKit.logos.submark), c => c.charCodeAt(0)); zip.file('logo-submark.png', b); }
+    } catch {}
+  }
 
   // Imagery
   const imagesFolder = zip.folder('images');
   if (imagesFolder) {
+    const isUrl = (s: string) => /^https?:\/\//i.test(s);
     for (let i = 0; i < brandKit.imagery.length; i++) {
       try {
-        const bytes = Uint8Array.from(atob(brandKit.imagery[i]), c => c.charCodeAt(0));
-        imagesFolder.file(`image-${i + 1}.png`, bytes);
+        const v = brandKit.imagery[i];
+        if (isUrl(v)) imagesFolder.file(`image-${i + 1}.png`, await fetchAsArrayBuffer(v));
+        else {
+          const bytes = Uint8Array.from(atob(v), c => c.charCodeAt(0));
+          imagesFolder.file(`image-${i + 1}.png`, bytes);
+        }
       } catch {}
     }
   }
@@ -52,10 +78,15 @@ export async function downloadBrandKit(brandKit: BrandKit) {
   // Social backdrops
   const socialFolder = zip.folder('social');
   if (socialFolder && brandKit.socialBackdrops) {
+    const isUrl = (s: string) => /^https?:\/\//i.test(s);
     for (const bg of brandKit.socialBackdrops) {
       try {
-        const bytes = Uint8Array.from(atob(bg.image), c => c.charCodeAt(0));
-        socialFolder.file(`${bg.platform}.png`, bytes);
+        const v = bg.image;
+        if (isUrl(v)) socialFolder.file(`${bg.platform}.png`, await fetchAsArrayBuffer(v));
+        else {
+          const bytes = Uint8Array.from(atob(v), c => c.charCodeAt(0));
+          socialFolder.file(`${bg.platform}.png`, bytes);
+        }
       } catch {}
     }
   }
