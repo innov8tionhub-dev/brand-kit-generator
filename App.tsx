@@ -10,6 +10,7 @@ import { MyShares } from './components/MyShares';
 import { Header } from './components/Header';
 import { Loader } from './components/Loader';
 import { generateLogo, generateColorPalette, generateTypography, generateBrandImagery, generateAdCopy, generateSocialBackdrops, generateLogoVariants } from './services/geminiService';
+import { uploadToR2 } from './utils/r2';
 import { generateMusic, generateVoiceover } from './services/elevenLabsService';
 import type { BrandInput, BrandKit } from './types';
 import { GenerationStatus } from './types';
@@ -60,14 +61,45 @@ const App: React.FC = () => {
         }
 
         try {
+            const slugify = (input: string) => input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+            const slug = slugify(data.name || 'brand');
+
             // Generate visuals in parallel
-            const [logos, colorPalette, typography, imagery, socialBackdrops] = await Promise.all([
+            const [logosRaw, colorPalette, typography, imageryRaw, socialBackdropsRaw] = await Promise.all([
                 generateLogoVariants(data.name, data.description, data.keywords),
                 generateColorPalette(data.description, data.keywords),
                 generateTypography(data.description, data.keywords),
                 generateBrandImagery(data.description, data.keywords),
                 generateSocialBackdrops(data.name, data.description, data.keywords),
             ]);
+
+            // Persist logos & images to R2 (best-effort). If upload fails, keep base64.
+            let logos = logosRaw;
+            try {
+                const [p, s, m] = await Promise.all([
+                    uploadToR2(`data:image/png;base64,${logosRaw.primary}`, `logos/${slug}-primary-${crypto.randomUUID()}.png`, 'image/png'),
+                    uploadToR2(`data:image/png;base64,${logosRaw.secondary}`, `logos/${slug}-secondary-${crypto.randomUUID()}.png`, 'image/png'),
+                    uploadToR2(`data:image/png;base64,${logosRaw.submark}`, `logos/${slug}-submark-${crypto.randomUUID()}.png`, 'image/png'),
+                ]);
+                logos = { primary: p, secondary: s, submark: m } as any;
+            } catch {}
+
+            let imagery = imageryRaw;
+            try {
+                imagery = await Promise.all(
+                    imageryRaw.map((img, i) => uploadToR2(`data:image/png;base64,${img}`, `images/${slug}-${i+1}-${crypto.randomUUID()}.png`, 'image/png'))
+                );
+            } catch {}
+
+            let socialBackdrops = socialBackdropsRaw;
+            try {
+                socialBackdrops = await Promise.all(
+                    socialBackdropsRaw.map((bg, idx) => (async () => ({
+                        platform: bg.platform,
+                        image: await uploadToR2(`data:image/jpeg;base64,${bg.image}`, `social/${bg.platform}-${idx}-${crypto.randomUUID()}.jpg`, 'image/jpeg')
+                    }))())
+                );
+            } catch {}
 
             // Generate ad copy then voiceover (sequential, since TTS needs the text)
             let adScript = '';
