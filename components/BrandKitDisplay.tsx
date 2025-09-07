@@ -14,13 +14,37 @@ const ImageIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" view
 const MusicIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9c0 .379-.04.743-.114 1.097M9 9h3.75M9 9L4.5 4.5M9 15v4.5M9 15c0 .379.04.743.114 1.097M9 15h3.75M9 15l4.5 4.5M4.5 4.5L9 9m-4.5 6L9 15m6-6l4.5-4.5M15 9h3.75m-3.75 0c0-.379.04-.743.114-1.097M15 9l-4.5 4.5M15 15v4.5m0-4.5c0-.379-.04-.743-.114-1.097M15 15h3.75M15 15l4.5 4.5" /></svg>;
 
 
-const loadGoogleFont = (fontFamily?: string) => {
+const KNOWN_FONTS = [
+    'Inter','Montserrat','Open Sans','Roboto','Poppins','Lato','Nunito','Source Sans Pro','Playfair Display','Merriweather','Raleway','Work Sans','Oswald','Nunito Sans','DM Sans','PT Sans','Archivo'
+];
+
+function extractFontFamilyName(input?: string): string | undefined {
+    if (!input) return undefined;
+    // Prefer a known font if it appears in the string
+    for (const f of KNOWN_FONTS) {
+        if (new RegExp(`(^|[^a-zA-Z])${f.replace(/ /g, '\\s+')}([^a-zA-Z]|$)`, 'i').test(input)) return f;
+    }
+    // Otherwise, take the first 1-3 alphabetic words
+    const words = (input.match(/[A-Za-z]+/g) || []).slice(0, 3);
+    const family = words.join(' ');
+    if (!family) return undefined;
+    // Reject obviously non-font descriptions
+    if (family.length < 2) return undefined;
+    return family;
+}
+
+const loadGoogleFont = (raw?: string) => {
+    const fontFamily = extractFontFamilyName(raw);
     if (!fontFamily) return;
-    const fontUrl = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(/ /g, '+')}:wght@400;700&display=swap`;
-    if (!document.querySelector(`link[href="${fontUrl}"]`)) {
+    const familyParam = fontFamily.replace(/ /g, '+');
+    const fontUrl = `https://fonts.googleapis.com/css2?family=${familyParam}:wght@400;700&display=swap`;
+    // Avoid complex querySelector with unescaped characters; track with data attribute
+    const existing = Array.from(document.querySelectorAll('link[data-font]')).find(l => (l as HTMLLinkElement).dataset.font === fontFamily);
+    if (!existing) {
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = fontUrl;
+        link.dataset.font = fontFamily;
         document.head.appendChild(link);
     }
 };
@@ -125,14 +149,14 @@ const base = isUrlLike(brandKit.logo) ? await fetchImageAsBase64(brandKit.logo) 
                         <h4 className="text-sm text-gray-400 mb-2">Heading Font: {brandKit.typography?.headingFont || 'System Default'} {brandKit.typography?.headingFont && (
                           <button className="ml-2 text-xs underline" onClick={async () => { try { await navigator.clipboard.writeText(brandKit.typography!.headingFont); } catch {} }}>Copy</button>
                         )}</h4>
-                        <p style={{ fontFamily: brandKit.typography?.headingFont ? `'${brandKit.typography.headingFont}', sans-serif` : undefined}} className="text-4xl font-bold truncate">The quick brown fox jumps over the lazy dog.</p>
+                        <p style={{ fontFamily: extractFontFamilyName(brandKit.typography?.headingFont) ? `'${extractFontFamilyName(brandKit.typography?.headingFont)}', sans-serif` : undefined}} className="text-4xl font-bold truncate">The quick brown fox jumps over the lazy dog.</p>
                     </div>
                     <hr className="my-6 border-gray-700"/>
                     <div>
                         <h4 className="text-sm text-gray-400 mb-2">Body Font: {brandKit.typography?.bodyFont || 'System Default'} {brandKit.typography?.bodyFont && (
                           <button className="ml-2 text-xs underline" onClick={async () => { try { await navigator.clipboard.writeText(brandKit.typography!.bodyFont); } catch {} }}>Copy</button>
                         )}</h4>
-                        <p style={{ fontFamily: brandKit.typography?.bodyFont ? `'${brandKit.typography.bodyFont}', sans-serif` : undefined}} className="text-base text-gray-300">
+                        <p style={{ fontFamily: extractFontFamilyName(brandKit.typography?.bodyFont) ? `'${extractFontFamilyName(brandKit.typography?.bodyFont)}', sans-serif` : undefined}} className="text-base text-gray-300">
                            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
                         </p>
                     </div>
