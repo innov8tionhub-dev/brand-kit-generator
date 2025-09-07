@@ -21,11 +21,13 @@ export async function downloadBrandKit(brandKit: BrandKit) {
     colorPalette: brandKit.colorPalette,
     typography: brandKit.typography,
     ad: brandKit.ad ? {
-      copy: brandKit.ad.copy,
+      copyScript: brandKit.ad.copyScript,
+      voiceoverText: brandKit.ad.voiceoverText,
       voiceId: brandKit.ad.voiceId,
       voiceName: brandKit.ad.voiceName,
       hasAudio: !!brandKit.ad.audioUrl,
     } : undefined,
+    adVideo: brandKit.adVideo ? { url: brandKit.adVideo.url, aspectRatio: brandKit.adVideo.aspectRatio } : undefined,
     generatedAt: new Date().toISOString(),
   };
   zip.file('brandkit.json', JSON.stringify(metadata, null, 2));
@@ -43,6 +45,17 @@ export async function downloadBrandKit(brandKit: BrandKit) {
       try {
         const bytes = Uint8Array.from(atob(brandKit.imagery[i]), c => c.charCodeAt(0));
         imagesFolder.file(`image-${i + 1}.png`, bytes);
+      } catch {}
+    }
+  }
+
+  // Social backdrops
+  const socialFolder = zip.folder('social');
+  if (socialFolder && brandKit.socialBackdrops) {
+    for (const bg of brandKit.socialBackdrops) {
+      try {
+        const bytes = Uint8Array.from(atob(bg.image), c => c.charCodeAt(0));
+        socialFolder.file(`${bg.platform}.png`, bytes);
       } catch {}
     }
   }

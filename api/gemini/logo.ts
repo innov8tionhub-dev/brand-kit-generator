@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, Modality } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
 
 export default async function handler(req: any, res: any) {
   try {
@@ -10,21 +10,44 @@ export default async function handler(req: any, res: any) {
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `Minimalist vector logo for a brand named "${name}". The brand is about: ${description}. Keywords: ${keywords}. The logo should be on a clean, solid #f0f0f0 background. Flat 2D style. No text in the logo.`;
 
-    const response: any = await ai.models.generateContent({
-      model: process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image-preview',
-      contents: { parts: [{ text: prompt }] },
-      config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
-    });
+    const extractImage = (response: any) => {
+      const candidates = response?.candidates || [];
+      for (const c of candidates) {
+        const parts = c?.content?.parts || [];
+        for (const p of parts) {
+          if (p?.inlineData?.data) return p.inlineData.data;
+        }
+      }
+      return null;
+    };
 
-    const candidates = response?.candidates || [];
-    const parts = candidates[0]?.content?.parts || [];
-    for (const part of parts) {
-      if (part.inlineData) return res.json({ image: part.inlineData.data });
+    const tryModel = async (modelName: string) => {
+      try {
+        const response: any = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts: [{ text: prompt }] },
+          config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+        });
+        return extractImage(response);
+      } catch (err) {
+        console.error('Logo model error:', err);
+        return null;
+      }
+    };
+
+    let image = await tryModel(process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image-preview');
+    if (!image) image = await tryModel('gemini-2.5-flash-image-preview');
+
+    if (!image) {
+      const transparentPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+      return res.json({ image: transparentPng, warning: 'No image data returned by model' });
     }
-    res.status(500).json({ error: 'No image data' });
+
+    res.json({ image });
   } catch (e: any) {
     console.error('Logo error:', e);
-    res.status(500).json({ error: e?.message || 'Logo generation failed' });
+    const transparentPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+    res.json({ image: transparentPng, warning: 'Logo fallback due to server error' });
   }
 }
 

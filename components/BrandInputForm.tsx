@@ -63,9 +63,11 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
         name: '',
         description: '',
         keywords: '',
+        tone: 'friendly',
         voiceId: DEFAULT_VOICE_ID,
         voiceName: CURATED_VOICES.find(v => v.id === DEFAULT_VOICE_ID)?.name,
-        skipMusic: false,
+        skipMusic: true,
+        generateVoiceover: false,
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -84,22 +86,39 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
         setFormData(prev => ({ ...prev, voiceId, voiceName: selected?.name }));
     };
 
+    const handleToneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const tone = e.target.value as BrandInput['tone'];
+        setFormData(prev => ({ ...prev, tone }));
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onGenerate(formData);
     };
 
-    // Load voices dynamically (fallback to curated if it fails)
+    // Curated voices, but enrich with preview URLs from API when available
     React.useEffect(() => {
         (async () => {
             try {
-                const voices = await fetchVoices();
-                if (voices.length > 0) {
-                    setVoiceOptions(voices);
-                    const defaultVoice = voices.find(v => v.id === formData.voiceId) || voices[0];
-                    setFormData(prev => ({ ...prev, voiceId: defaultVoice.id, voiceName: defaultVoice.name }));
-                }
-            } catch {}
+                const apiVoices = await fetchVoices();
+                let curated = CURATED_VOICES.map(cv => ({
+                    id: cv.id,
+                    name: cv.name,
+                    previewUrl: apiVoices.find(v => v.id === cv.id)?.previewUrl,
+                }));
+                // Show only voices with preview when possible
+                const withPreview = curated.filter(v => !!v.previewUrl);
+                curated = withPreview.length > 0 ? withPreview : curated;
+                // Prefer voices with previews
+                curated = curated.sort((a,b) => Number(!!b.previewUrl) - Number(!!a.previewUrl));
+                setVoiceOptions(curated);
+                const preferred = curated.find(v => v.previewUrl) || curated[0];
+                setFormData(prev => ({ ...prev, voiceId: preferred.id, voiceName: preferred.name }));
+            } catch {
+                setVoiceOptions(CURATED_VOICES);
+                const fallback = CURATED_VOICES[0];
+                setFormData(prev => ({ ...prev, voiceId: fallback.id, voiceName: fallback.name }));
+            }
         })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -138,6 +157,18 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
         }
     };
 
+    const stopPreview = () => {
+        try {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.src = '';
+                audioRef.current = null;
+            }
+        } finally {
+            setIsPreviewing(false);
+        }
+    };
+
     React.useEffect(() => {
         return () => {
             if (audioRef.current) {
@@ -151,6 +182,34 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
     return (
         <div className="max-w-2xl mx-auto">
             <form onSubmit={handleSubmit} className="space-y-6 p-8 bg-gray-800/50 rounded-xl shadow-2xl border border-gray-700">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-semibold text-white">Enter Brand Details</h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const names = ['Solara Coffee', 'NovaFit', 'Lumen AI', 'Breeze Bank', 'CozyCart'];
+                      const descs = [
+                        'A modern, eco-friendly coffee brand for busy professionals.',
+                        'A smart fitness companion that makes workouts simple and fun.',
+                        'An AI assistant that streamlines creative workflows.',
+                        'A digital-first, fee-free bank with personality.',
+                        'A delightful shopping app focused on curated essentials.',
+                      ];
+                      const vibes = ['minimalist, warm, friendly', 'bold, energetic, confident', 'clean, professional, trustworthy', 'playful, modern, vibrant'];
+                      const random = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+                      setFormData(prev => ({
+                        ...prev,
+                        name: random(names),
+                        description: random(descs),
+                        keywords: random(vibes),
+                        tone: 'friendly',
+                      }));
+                    }}
+                    className="px-3 py-1.5 text-sm rounded-md bg-gray-700 hover:bg-gray-600"
+                  >
+                    Random brand
+                  </button>
+                </div>
                 <InputField id="name" label="Brand Name" value={formData.name} onChange={handleChange} placeholder="e.g., Solara Coffee" />
                 <TextAreaField id="description" label="Brand Description" value={formData.description} onChange={handleChange} placeholder="A modern, eco-friendly coffee shop for young professionals." />
                 <InputField id="keywords" label="Keywords / Vibe" value={formData.keywords} onChange={handleChange} placeholder="e.g., minimalist, warm, friendly, sustainable" />
@@ -163,11 +222,11 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                       onChange={handleVoiceChange}
                       options={voiceOptions.map(v => ({ value: v.id, label: v.name }))}
                   />
-                  <div className="flex items-end">
+                  <div className="flex items-end gap-2">
                     <button
                       type="button"
                       onClick={() => previewVoice(voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl)}
-                      disabled={isPreviewing}
+                      disabled={isPreviewing || !voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl}
                       className={`px-4 py-2 text-sm rounded-md ${isPreviewing ? 'bg-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'}`}
                     >
                       {isPreviewing ? (
@@ -179,12 +238,39 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                         'Preview Voice'
                       )}
                     </button>
+                    <button
+                      type="button"
+                      onClick={stopPreview}
+                      disabled={!isPreviewing}
+                      className={`px-4 py-2 text-sm rounded-md ${!isPreviewing ? 'bg-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'}`}
+                    >
+                      Stop Preview
+                    </button>
                   </div>
                 </div>
+
+                <SelectField
+                    id="tone"
+                    label="Tone"
+                    value={formData.tone || 'friendly'}
+                    onChange={handleToneChange}
+                    options={[
+                        { value: 'friendly', label: 'Friendly' },
+                        { value: 'professional', label: 'Professional' },
+                        { value: 'bold', label: 'Bold' },
+                        { value: 'playful', label: 'Playful' },
+                        { value: 'inspirational', label: 'Inspirational' },
+                    ]}
+                />
 
                 <div className="flex items-center gap-2">
                   <input id="skipMusic" type="checkbox" checked={!!formData.skipMusic} onChange={handleCheckbox} />
                   <label htmlFor="skipMusic" className="text-sm text-gray-300">Skip intro/outro music</label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input id="generateVoiceover" type="checkbox" checked={!!formData.generateVoiceover} onChange={handleCheckbox} />
+                  <label htmlFor="generateVoiceover" className="text-sm text-gray-300">Generate ad voiceover</label>
                 </div>
 
                 <button

@@ -2,9 +2,14 @@
 import React, { useState, useCallback } from 'react';
 import { BrandInputForm } from './components/BrandInputForm';
 import { BrandKitDisplay } from './components/BrandKitDisplay';
+import { shareBrandKit } from './utils/share';
+import { ToastHost } from './components/ToastHost';
+import { NotFound } from './components/NotFound';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { MyShares } from './components/MyShares';
 import { Header } from './components/Header';
 import { Loader } from './components/Loader';
-import { generateLogo, generateColorPalette, generateTypography, generateBrandImagery, generateAdCopy } from './services/geminiService';
+import { generateLogo, generateColorPalette, generateTypography, generateBrandImagery, generateAdCopy, generateSocialBackdrops } from './services/geminiService';
 import { generateMusic, generateVoiceover } from './services/elevenLabsService';
 import type { BrandInput, BrandKit } from './types';
 import { GenerationStatus } from './types';
@@ -14,31 +19,68 @@ const App: React.FC = () => {
     const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
     const [brandKit, setBrandKit] = useState<BrandKit | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [isSharedView, setIsSharedView] = useState(false);
+    const [shareNotFound, setShareNotFound] = useState(false);
+    const [showShares, setShowShares] = useState(false);
     const blobUrlsRef = React.useRef<string[]>([]);
+
+    React.useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const shareId = params.get('share');
+        if (shareId) {
+            fetch(`/api/share/${shareId}`).then(async r => {
+                if (!r.ok) throw new Error('Share not found');
+                const data = await r.json();
+                setBrandKit(data);
+                setGenerationStatus(GenerationStatus.SUCCESS);
+                setIsSharedView(true);
+            }).catch(() => {
+                setShareNotFound(true);
+                setGenerationStatus(GenerationStatus.ERROR);
+            });
+        }
+    }, []);
 
     const handleGenerate = useCallback(async (data: BrandInput) => {
         setGenerationStatus(GenerationStatus.LOADING);
         setError(null);
         setBrandKit(null);
 
+        // Rate limit guard
+        try {
+            const r = await fetch('/api/guard/start', { method: 'POST' });
+            if (!r.ok) {
+                const t = await r.json().catch(() => ({} as any));
+                throw new Error(t?.error || 'Rate limit');
+            }
+        } catch (e:any) {
+            setError(`Daily limit reached. Try again tomorrow.`);
+            setGenerationStatus(GenerationStatus.ERROR);
+            return;
+        }
+
         try {
             // Generate visuals in parallel
-            const [logo, colorPalette, typography, imagery] = await Promise.all([
+            const [logo, colorPalette, typography, imagery, socialBackdrops] = await Promise.all([
                 generateLogo(data.name, data.description, data.keywords),
                 generateColorPalette(data.description, data.keywords),
                 generateTypography(data.description, data.keywords),
                 generateBrandImagery(data.description, data.keywords),
+                generateSocialBackdrops(data.name, data.description, data.keywords),
             ]);
 
             // Generate ad copy then voiceover (sequential, since TTS needs the text)
-            let adCopy = '';
+            let adScript = '';
+            let adVoiceoverText = '';
             let adAudioUrl: string | undefined = undefined;
             let adError: string | undefined = undefined;
             try {
-                adCopy = await generateAdCopy(data.name, data.description, data.keywords);
-                if (data.voiceId) {
-                    const voiceover = await generateVoiceover(adCopy, 'Ad Voiceover', data.voiceId);
-                    adAudioUrl = voiceover.url;
+                const { script, voiceover } = await generateAdCopy(data.name, data.description, data.keywords, data.tone);
+                adScript = script;
+                adVoiceoverText = voiceover;
+                if (data.generateVoiceover && data.voiceId && adVoiceoverText) {
+                    const voiceoverAsset = await generateVoiceover(adVoiceoverText, 'Ad Voiceover', data.voiceId);
+                    adAudioUrl = voiceoverAsset.url;
                 }
             } catch (adErr) {
                 console.warn('Ad generation warning:', adErr);
@@ -76,9 +118,11 @@ const App: React.FC = () => {
                 colorPalette,
                 typography,
                 imagery,
+                socialBackdrops,
                 audio: { intro, outro },
-                ad: adCopy ? {
-                    copy: adCopy,
+                ad: adScript ? {
+                    copyScript: adScript,
+                    voiceoverText: adVoiceoverText,
                     voiceId: data.voiceId,
                     voiceName: data.voiceName,
                     audioUrl: adAudioUrl,
@@ -111,7 +155,7 @@ const App: React.FC = () => {
             case GenerationStatus.LOADING:
                 return <Loader />;
             case GenerationStatus.SUCCESS:
-                return <BrandKitDisplay brandKit={brandKit} onReset={handleReset} />;
+                return <BrandKitDisplay brandKit={brandKit} onReset={handleReset} onUpdate={setBrandKit as any} readOnly={isSharedView} />;
             case GenerationStatus.ERROR:
                 return (
                     <div className="text-center p-8 bg-red-900/20 border border-red-500 rounded-lg">
@@ -129,14 +173,31 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-900 font-sans">
+            <ToastHost />
             <main className="container mx-auto px-4 py-8">
+                <ErrorBoundary>
                 <Header />
                 <div className="mt-8">
+                    <div className="flex justify-end mb-3">
+                      <button onClick={()=>setShowShares(s=>!s)} className="px-3 py-1.5 rounded bg-brand-blue hover:bg-brand-yellow text-white" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}>{showShares ? 'Hide' : 'My Shares'}</button>
+                    </div>
+                    {showShares && (
+                      <div className="mb-6"><MyShares /></div>
+                    )}
+                    {isSharedView && (
+                        <div className="mb-4 p-3 rounded bg-gray-800 text-xs text-gray-300">
+                            Shared read-only view. To create your own, refresh without the share parameter.
+                        </div>
+                    )}
                     {renderContent()}
                 </div>
+                {shareNotFound && (
+                    <div className="mt-6"><NotFound message="This shared brand was not found or has expired." onBack={handleReset} /></div>
+                )}
+            </ErrorBoundary>
             </main>
              <footer className="text-center py-6 text-gray-500 text-sm">
-                <p>Powered by Google Gemini (image model: nanobanana) & ElevenLabs.</p>
+                <p>Powered by Google Gemini (image model: nanobanana),& ElevenLabs, And FAL AI.</p>
             </footer>
         </div>
     );
