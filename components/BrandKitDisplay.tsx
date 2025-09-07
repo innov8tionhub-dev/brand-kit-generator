@@ -460,9 +460,8 @@ const base = isUrlLike(img) ? await fetchImageAsBase64(img) : img;
                   <button onClick={async () => {
                     try {
                       const { shareBrandKit } = await import('../utils/share');
-                      const url = await shareBrandKit(brandKit);
+                      await shareBrandKit(brandKit);
                       showToast('Share link copied');
-                      console.log('Share URL:', url);
                     } catch { showToast('Share failed'); }
                   }} className="px-6 py-2 text-base font-medium rounded-md text-black bg-brand-yellow hover:bg-brand-yellow/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-brand-blue transition-colors">
                     Share Link
