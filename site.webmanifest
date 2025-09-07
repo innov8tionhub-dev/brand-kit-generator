@@ -1,0 +1,13 @@
+{
+  "name": "Brand Kit Generator",
+  "short_name": "BrandKit",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#1D4ED8",
+  "icons": [
+    { "src": "/ibk-logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/ibk-logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
+
