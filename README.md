@@ -84,4 +84,5 @@ See .env.example for the full list and descriptions. Key ones:
 - Video generation: ensure FAL_AI_KEY is set; keep prompts short to avoid timeouts
 - R2 uploads: verify CLOUDFLARE_ACCOUNT_ID, R2_UPLOAD_IMAGE_ACCESS_KEY_ID, R2_UPLOAD_IMAGE_SECRET_ACCESS_KEY, R2_UPLOAD_IMAGE_BUCKET_NAME
 - Database: set DATABASE_URL; the app auto-creates tables on the dev server; on Vercel, use existing tables or run migrations
+- Tailwind: no CDN now; classes compile via Vite plugin. If you add new files, ensure paths are covered in tailwind.config.ts content
 - Rate limit reached: set RATE_LIMIT_DISABLED=true for demos or raise the limit

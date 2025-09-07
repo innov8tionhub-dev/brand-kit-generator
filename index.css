@@ -1,3 +1,4 @@
-/* minimal placeholder to remove build warning */
-body{}
+@import "tailwindcss";
+
+/* Custom CSS can go below if needed */
 
