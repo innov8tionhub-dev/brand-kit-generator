@@ -5,9 +5,25 @@ import { resizeBase64ToAspect } from '../utils/image';
 // Client calls secured server APIs. No keys are used in the browser.
 
 export const generateLogo = async (name: string, description: string, keywords: string): Promise<string> => {
-  // Backward-compat: call variants route and return primary
-  const v = await generateLogoVariants(name, description, keywords);
-  return v.primary;
+  // Prefer variants endpoint; gracefully fall back to single-logo endpoint if unavailable in dev
+  try {
+    const r = await fetch('/api/gemini/logo-variants', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description, keywords })
+    });
+    if (r.ok) {
+      const { primary } = await r.json();
+      if (primary) return primary;
+    }
+  } catch {}
+  // Fallback to legacy single-logo endpoint
+  const r2 = await fetch('/api/gemini/logo', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description, keywords })
+  });
+  if (!r2.ok) throw new Error('Logo generation failed');
+  const { image } = await r2.json();
+  return image;
 };
 
 export const generateColorPalette = async (description: string, keywords: string): Promise<ColorPalette> => {
