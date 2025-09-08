@@ -97,9 +97,8 @@ export default async function handler(req: any, res: any) {
       const body = await json(req);
       const { name, description, keywords } = body || {};
       const ai = getGenAI();
-      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
 
-      const prompt = `Minimalist vector logo for a brand named "${name}". The brand is about: ${description}. Keywords: ${keywords}. The logo should be on a clean, solid #f0f0f0 background. Flat 2D style. No text in the logo.`;
+      const prompt = `Minimalist vector logo for a brand named \"${name}\". The brand is about: ${description}. Keywords: ${keywords}. The logo should be on a clean, solid #f0f0f0 background. Flat 2D style. No text in the logo.`;
       const extractImage = (response: any) => {
         const candidates = response?.candidates || [];
         for (const c of candidates) {
@@ -111,6 +110,10 @@ export default async function handler(req: any, res: any) {
         }
         return null;
       };
+      if (!ai) {
+        const transparentPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+        return res.json({ image: transparentPng, warning: 'Gemini not configured' });
+      }
       const tryModel = async (modelName: string) => {
         try {
           const response: any = await ai.models.generateContent({
@@ -137,7 +140,10 @@ export default async function handler(req: any, res: any) {
       const body = await json(req);
       const { name, description, keywords } = body || {};
       const ai = getGenAI();
-      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
+      if (!ai) {
+        const transparentPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+        return res.json({ primary: transparentPng, secondary: transparentPng, submark: transparentPng });
+      }
 
       const mkPrompt = (variant: 'primary'|'secondary'|'submark') => {
         const common = `Brand: ${name}. About: ${description}. Vibe: ${keywords}. Clean vector aesthetic, flat 2D, high contrast, no text, no watermark, centered on neutral #f0f0f0 background.`;
@@ -175,32 +181,33 @@ export default async function handler(req: any, res: any) {
       const body = await json(req);
       const { description, keywords } = body || {};
       const ai = getGenAI();
-      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
-      const prompt = `Generate a 5-color brand palette for a brand described as "${description}". The vibe should be ${keywords}. The colors should be modern and complementary.`;
-      const response: any = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              palette: { type: Type.ARRAY, items: { type: Type.STRING } },
-            },
+      if (!ai) {
+        return res.json({ palette: ['#1D4ED8','#F59E0B','#10B981','#F43F5E','#F3F4F6'] });
+      }
+      try {
+        const prompt = `Generate a 5-color brand palette for a brand described as \"${description}\". The vibe should be ${keywords}. The colors should be modern and complementary.`;
+        const response: any = await ai.models.generateContent({
+          model: GEMINI_TEXT_MODEL,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: { type: Type.OBJECT, properties: { palette: { type: Type.ARRAY, items: { type: Type.STRING } } } },
           },
-        },
-      });
-      const text = response?.text ?? '';
-      const jsonParsed = JSON.parse(text);
-      return res.json({ palette: jsonParsed.palette });
+        });
+        const text = response?.text ?? '';
+        const jsonParsed = JSON.parse(text);
+        return res.json({ palette: jsonParsed.palette });
+      } catch {
+        return res.json({ palette: ['#1D4ED8','#F59E0B','#10B981','#F43F5E','#F3F4F6'] });
+      }
     }
 
     if (pathname === '/api/gemini/typography' && method === 'POST') {
       const body = await json(req);
       const { description, keywords } = body || {};
       const ai = getGenAI();
-      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
-      const prompt = `Suggest a heading font and a body font pairing from Google Fonts for a brand described as "${description}". The vibe is ${keywords}. The fonts should be highly readable and web-safe.`;
+      if (!ai) return res.json({ headingFont: 'Inter', bodyFont: 'Inter' });
+      const prompt = `Suggest a heading font and a body font pairing from Google Fonts for a brand described as \"${description}\". The vibe is ${keywords}. The fonts should be highly readable and web-safe.`;
       const tryModel = async (modelName: string) => {
         const response: any = await ai.models.generateContent({
           model: modelName,
@@ -237,7 +244,11 @@ export default async function handler(req: any, res: any) {
       const body = await json(req);
       const { description, keywords, count = 2 } = body || {};
       const ai = getGenAI();
-      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
+      const transparentPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+      if (!ai) {
+        const countNum = Number(count) || 2;
+        return res.json({ images: Array.from({ length: countNum }, () => transparentPng) });
+      }
       const prompt = `An abstract, high-quality background image suitable for a brand website. The brand is about: ${description}. The mood should be ${keywords}. Photorealistic, subtle, professional.`;
       const gen = async () => {
         const response: any = await ai.models.generateContent({
