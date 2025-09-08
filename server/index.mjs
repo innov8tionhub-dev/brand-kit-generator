@@ -573,8 +573,14 @@ app.post('/api/r2/upload', async (req, res) => {
 
     const publicBase = (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     const fallbackBase = `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-    const base = publicBase || fallbackBase;
-    const url = `${base}/${process.env.R2_UPLOAD_IMAGE_BUCKET_NAME}/${key}`;
+    let url;
+    if (publicBase) {
+      // Public r2.dev domain already points at the bucket; do NOT include the bucket in the path
+      url = `${publicBase}/${key}`;
+    } else {
+      // cloudflarestorage.com endpoint requires bucket segment
+      url = `${fallbackBase}/${process.env.R2_UPLOAD_IMAGE_BUCKET_NAME}/${key}`;
+    }
     res.json({ url });
   } catch (e) {
     console.error('R2 upload error:', e);

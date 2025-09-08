@@ -535,8 +535,14 @@ If brand name is provided, tastefully weave it as on-screen text cues without qu
 
       const publicBase = (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
       const fallbackBase = `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-      const base = publicBase || fallbackBase;
-      const url = `${base}/${bucket}/${key}`;
+      let url: string;
+      if (publicBase) {
+        // r2.dev public domain is bucket-scoped, so do NOT include bucket in the path
+        url = `${publicBase}/${key}`;
+      } else {
+        // cloudflarestorage.com endpoint requires bucket in the path
+        url = `${fallbackBase}/${bucket}/${key}`;
+      }
       return res.json({ url });
     }
 
