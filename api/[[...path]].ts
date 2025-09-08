@@ -4,8 +4,8 @@ import { Redis } from '@upstash/redis';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { fal } from '@fal-ai/client';
 import { randomUUID } from 'crypto';
-import { getDb } from '../db/client';
-import { shares as sharesTable, shareAssets as shareAssetsTable } from '../db/schema';
+import { getDb } from '../db/client.js';
+import { shares as sharesTable, shareAssets as shareAssetsTable } from '../db/schema.js';
 
 // Lazy singletons
 let genAI: GoogleGenAI | null = null;
