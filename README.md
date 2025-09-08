@@ -114,4 +114,6 @@ See .env.example for full list.
 
 ---
 
+Live Demo: https://brand-kit-generator-hackathon.vercel.app
+
 MIT © 2025 – Built for the Nano Banana 48‑Hour Challenge

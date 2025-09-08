@@ -53,18 +53,9 @@ function ensureFal() {
   }
 }
 
-async function handleRateLimit(req: any) {
-  if (RATE_LIMIT_DISABLED) return true;
-  const r = getRedis();
-  if (!r) return true; // bypass if no Redis configured
-  const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket?.remoteAddress || 'unknown').trim();
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const key = `runs:${ip}:${today}`;
-  const count = await r.incr(key);
-  if (count === 1) {
-    await r.expire(key, 24 * 60 * 60);
-  }
-  return count <= RATE_LIMIT_MAX_PER_IP_PER_DAY;
+async function handleRateLimit(_req: any) {
+  // Disabled for hackathon/demo deployments; always allow
+  return true;
 }
 
 function pathOf(req: any) {
@@ -283,30 +274,32 @@ export default async function handler(req: any, res: any) {
 
     if (pathname === '/api/gemini/random-brand' && method === 'POST') {
       const ai = getGenAI();
-      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
+      // Graceful fallback if Gemini is not configured
+      if (!ai) {
+        return res.json({ name: 'Solara Coffee', description: 'A modern, eco-friendly coffee brand for busy professionals.', keywords: 'minimalist, warm, friendly', tone: 'friendly' });
+      }
       const prompt = `Create a fresh brand concept. Return JSON with: name (2-3 words), description (1-2 concise sentences), keywords (comma-separated list of 3-6 vibe words), and tone (one of: friendly, professional, bold, playful, inspirational).`;
-      const response: any = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              description: { type: Type.STRING },
-              keywords: { type: Type.STRING },
-              tone: { type: Type.STRING },
+      try {
+        const response: any = await ai.models.generateContent({
+          model: GEMINI_TEXT_MODEL,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, keywords: { type: Type.STRING }, tone: { type: Type.STRING } },
             },
           },
-        },
-      });
-      let out: any;
-      try { out = JSON.parse(response?.text || '{}'); } catch { out = {}; }
-      if (!out?.name || !out?.description || !out?.keywords) {
-        out = { name: 'Solara Coffee', description: 'A modern, eco-friendly coffee brand for busy professionals.', keywords: 'minimalist, warm, friendly', tone: 'friendly' };
+        });
+        let out: any;
+        try { out = JSON.parse(response?.text || '{}'); } catch { out = {}; }
+        if (!out?.name || !out?.description || !out?.keywords) {
+          out = { name: 'Solara Coffee', description: 'A modern, eco-friendly coffee brand for busy professionals.', keywords: 'minimalist, warm, friendly', tone: 'friendly' };
+        }
+        return res.json(out);
+      } catch {
+        return res.json({ name: 'Solara Coffee', description: 'A modern, eco-friendly coffee brand for busy professionals.', keywords: 'minimalist, warm, friendly', tone: 'friendly' });
       }
-      return res.json(out);
     }
 
     if (pathname === '/api/gemini/ad-copy' && method === 'POST') {
@@ -375,57 +368,67 @@ If brand name is provided, tastefully weave it as on-screen text cues without qu
 
     // --- ElevenLabs routes ---
     if (pathname === '/api/elevenlabs/voices' && method === 'GET') {
-      if (!ELEVENLABS_API_KEY) return res.json({ voices: [] });
-      const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': ELEVENLABS_API_KEY } });
-      if (!r.ok) return res.json({ voices: [] });
-      const j = await r.json();
-      // Extract at least 10 voices, prioritizing those with preview URLs
-      const allVoices = (j.voices || []).map((v: any) => ({
-        id: v.voice_id,
-        name: v.name,
-        previewUrl: v.preview_url || v.samples?.[0]?.preview_url || undefined,
-        category: v.category || 'generated',
-        description: v.description || '',
-        accent: v.labels?.accent || '',
-        gender: v.labels?.gender || '',
-        age: v.labels?.age || ''
-      }));
-      
-      // Sort voices: prioritize those with preview URLs, then by name
-      const sortedVoices = allVoices.sort((a: any, b: any) => {
-        if (a.previewUrl && !b.previewUrl) return -1;
-        if (!a.previewUrl && b.previewUrl) return 1;
-        return a.name.localeCompare(b.name);
-      });
-      
-      // Return at least 10 voices (or all if less than 10 available)
-      const voices = sortedVoices.slice(0, Math.max(10, sortedVoices.length));
-      return res.json({ voices });
+      try {
+        if (!ELEVENLABS_API_KEY) return res.json({ voices: [] });
+        const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': ELEVENLABS_API_KEY } });
+        if (!r.ok) return res.json({ voices: [] });
+        const j = await r.json();
+        const allVoices = (j.voices || []).map((v: any) => ({
+          id: v.voice_id,
+          name: v.name,
+          previewUrl: v.preview_url || v.samples?.[0]?.preview_url || undefined,
+          category: v.category || 'generated',
+          description: v.description || '',
+          accent: v.labels?.accent || '',
+          gender: v.labels?.gender || '',
+          age: v.labels?.age || ''
+        }));
+        const sortedVoices = allVoices.sort((a: any, b: any) => {
+          if (a.previewUrl && !b.previewUrl) return -1;
+          if (!a.previewUrl && b.previewUrl) return 1;
+          return a.name.localeCompare(b.name);
+        });
+        const voices = sortedVoices.slice(0, Math.max(10, sortedVoices.length));
+        return res.json({ voices });
+      } catch (err) {
+        console.error('ElevenLabs voices error:', err);
+        return res.json({ voices: [] });
+      }
     }
 
     if (pathname === '/api/elevenlabs/tts' && method === 'POST') {
-      const body = await json(req);
-      const { text, voiceId, modelId = 'eleven_multilingual_v2', outputFormat = 'mp3_44100_128' } = body || {};
-      const client = getXI();
-      if (!client) return res.status(500).json({ error: 'ElevenLabs not configured' });
-      if (!text || !voiceId) return res.status(400).json({ error: 'Missing text or voiceId' });
-      const bytes: any = await client.textToSpeech.convert(voiceId, { text, modelId, outputFormat });
-      const arrayBuffer = bytes instanceof ArrayBuffer ? bytes : await new Response(bytes).arrayBuffer();
-      const buf = Buffer.from(new Uint8Array(arrayBuffer));
-      res.setHeader('Content-Type', 'audio/mpeg');
-      return res.send(buf);
+      try {
+        const body = await json(req);
+        const { text, voiceId, modelId = 'eleven_multilingual_v2', outputFormat = 'mp3_44100_128' } = body || {};
+        const client = getXI();
+        if (!client) return res.status(500).json({ error: 'ElevenLabs not configured' });
+        if (!text || !voiceId) return res.status(400).json({ error: 'Missing text or voiceId' });
+        const bytes: any = await client.textToSpeech.convert(voiceId, { text, modelId, outputFormat });
+        const arrayBuffer = bytes instanceof ArrayBuffer ? bytes : await new Response(bytes).arrayBuffer();
+        const buf = Buffer.from(new Uint8Array(arrayBuffer));
+        res.setHeader('Content-Type', 'audio/mpeg');
+        return res.send(buf);
+      } catch (err: any) {
+        console.error('ElevenLabs TTS error:', err);
+        return res.status(500).json({ error: err?.message || 'TTS failed' });
+      }
     }
 
     if (pathname === '/api/elevenlabs/music' && method === 'POST') {
-      const body = await json(req);
-      const { prompt, lengthMs = 15000 } = body || {};
-      const client = getXI();
-      if (!client) return res.status(500).json({ error: 'ElevenLabs not configured' });
-      const bytes: any = await client.music.compose({ prompt, musicLengthMs: Number(lengthMs) });
-      const arrayBuffer = bytes instanceof ArrayBuffer ? bytes : await new Response(bytes).arrayBuffer();
-      const buf = Buffer.from(new Uint8Array(arrayBuffer));
-      res.setHeader('Content-Type', 'audio/mpeg');
-      return res.send(buf);
+      try {
+        const body = await json(req);
+        const { prompt, lengthMs = 15000 } = body || {};
+        const client = getXI();
+        if (!client) return res.status(500).json({ error: 'ElevenLabs not configured' });
+        const bytes: any = await client.music.compose({ prompt, musicLengthMs: Number(lengthMs) });
+        const arrayBuffer = bytes instanceof ArrayBuffer ? bytes : await new Response(bytes).arrayBuffer();
+        const buf = Buffer.from(new Uint8Array(arrayBuffer));
+        res.setHeader('Content-Type', 'audio/mpeg');
+        return res.send(buf);
+      } catch (err: any) {
+        console.error('ElevenLabs music error:', err);
+        return res.status(500).json({ error: err?.message || 'Music failed' });
+      }
     }
 
     // --- Share (Upstash) ---
@@ -539,11 +542,23 @@ If brand name is provided, tastefully weave it as on-screen text cues without qu
       return res.json({ data: result.data, requestId: result.requestId });
     }
 
+    // Health check
+    if (pathname === '/api/health' && method === 'GET') {
+      return res.json({
+        ok: true,
+        env: {
+          gemini: !!process.env.GEMINI_API_KEY,
+          elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+          fal: !!process.env.FAL_AI_KEY,
+        },
+      });
+    }
+
     // Fallback not found
     res.status(404).json({ error: 'Not found' });
   } catch (e: any) {
     console.error('API catch-all error:', e);
-    res.status(500).json({ error: 'Internal error' });
+    res.status(500).json({ error: e?.message || 'Internal error' });
   }
 }
 

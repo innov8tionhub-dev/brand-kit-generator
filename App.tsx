@@ -43,19 +43,17 @@ const App: React.FC = () => {
         setError(null);
         setBrandKit(null);
 
-        // Rate limit guard (ignore if endpoint is missing in the deployment)
+        // Rate limit guard (bypassed in production; only enforce when server returns 429)
         try {
             const r = await fetch('/api/guard/start', { method: 'POST' });
             if (!r.ok) {
-                if (r.status === 404) {
-                    // No guard deployed -> proceed without blocking
-                } else {
+                if (r.status === 429) {
                     const t = await r.json().catch(() => ({} as any));
-                    throw new Error(t?.error || 'Rate limit');
+                    throw new Error(t?.error || 'rate_limit');
                 }
+                // Any other status (404/500) → proceed without blocking
             }
         } catch (e:any) {
-            // If the guard endpoint exists and rejected the request, show message; otherwise continue
             if (String(e?.message || '').toLowerCase().includes('limit')) {
                 setError(`Daily limit reached. Try again tomorrow.`);
                 setGenerationStatus(GenerationStatus.ERROR);
