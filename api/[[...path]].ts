@@ -53,9 +53,20 @@ function ensureFal() {
   }
 }
 
-async function handleRateLimit(_req: any) {
-  // Disabled for hackathon/demo deployments; always allow
-  return true;
+async function handleRateLimit(req: any) {
+  // Respect env toggles; if disabled or Redis not configured, allow
+  if (RATE_LIMIT_DISABLED) return true;
+  const r = getRedis();
+  if (!r) return true; // allow if Redis is not set up
+
+  const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket?.remoteAddress || 'unknown').trim();
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const key = `runs:${ip}:${today}`;
+  const count = await r.incr(key);
+  if (count === 1) {
+    await r.expire(key, 24 * 60 * 60);
+  }
+  return count <= RATE_LIMIT_MAX_PER_IP_PER_DAY;
 }
 
 function pathOf(req: any) {
