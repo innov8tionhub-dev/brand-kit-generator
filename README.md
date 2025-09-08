@@ -1,89 +1,117 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <img width="1000" alt="Brand Kit Generator" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Brand Kit Generator
+# Brand Kit Generator (Nano Banana Hackathon Edition)
 
-Production-ready brand kit generator with secure backend integrations:
-- Gemini (Google AI) for logos, palettes, typography, imagery, and ad copy
-- ElevenLabs for TTS and music
-- fal.ai Veo-3-Fast for short video ads
-- Upstash Redis rate limiting + user share index
-- Cloudflare R2 for asset uploads
+Create a complete, coherent brand kit in minutes—logo variants, color palette, typography, backgrounds, social backdrops, ad copy, optional TTS + music, and an ad video—then download everything as a ZIP.
 
-## Quickstart
+Built for the Nano Banana 48‑Hour Challenge using:
+- Google Gemini 2.5 Flash Image Preview (aka “Nano Banana”) for image generation, prompt‑based editing, palettes, typography, and ad copy
+- ElevenLabs for TTS voiceovers and music
+- fal.ai Veo‑3‑Fast for ad video generation
 
-1) Copy environment example and fill values
+All API keys are kept server‑side and never exposed to the browser.
+
+---
+
+## One‑Minute Setup
+
+1) Copy env and add keys
    cp .env.example .env.local
-   Fill in the required keys (Gemini, ElevenLabs, fal.ai). Optional: Upstash (rate limit + shares) and Cloudflare R2 (uploads).
+   - GEMINI_API_KEY (required)
+   - ELEVENLABS_API_KEY (for TTS/music)
+   - FAL_AI_KEY (for video)
+   - Optional: RATE_LIMIT_DISABLED=true for local demos
 
-2) Install dependencies
+2) Install deps
    npm install
 
-3) Run both frontend and API locally
+3) Run frontend + API together
    npm run dev:all
    - Frontend: http://localhost:5174
-   - API: http://localhost:8787 (configurable via PORT)
+   - API: http://localhost:8787
 
-4) Generate a kit
-   Enter brand details and click "Generate Brand Kit". Optionally preview voices, generate jingles, generate a short video, and download the kit as a zip.
+> Tip: The Vite dev server proxies /api → the local API automatically. No keys in the client.
 
-## Environment variables
-See .env.example for the full list and descriptions. Key ones:
+---
+
+## How to Use (Judge Flow)
+1) Click “Random brand” to auto‑fill name/description/keywords via Gemini.
+2) Optionally tick:
+   - Generate intro/outro music
+   - Generate Ad Voiceover
+3) Click “Generate Brand Kit”.
+4) In the Ad card, you can regenerate the voiceover or generate an ad video (Veo‑3‑Fast).
+5) Download Brand Kit – the ZIP includes:
+   - logo(s), color palette, typography metadata
+   - images/ and social/ assets
+   - audio/intro.mp3, audio/outro.mp3 (if generated)
+   - audio/ad‑voiceover.(mp3|wav|ogg) (if generated)
+   - ad‑video.(mp4|webm|mov) (if generated)
+
+---
+
+## Why this fits Nano Banana
+- “Edit with words”: click Edit on any image/logo and enter instructions (e.g., “more contrast”, “circular motif”); Gemini returns an updated asset.
+- Consistent brand look: the same description/keywords drive logos, backgrounds, and social backdrops.
+- End‑to‑end pipeline: text → visuals → copy → audio → video, all in one flow.
+
+---
+
+## Environment Variables (summary)
+See .env.example for full list.
 - GEMINI_API_KEY (required)
-- ELEVENLABS_API_KEY (required)
-- FAL_AI_KEY (required for video)
-- RATE_LIMIT_DISABLED, RATE_LIMIT_MAX_PER_IP_PER_DAY (optional)
-- UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN (optional; required for sharing and production-rate-limit)
-- CLOUDFLARE_ACCOUNT_ID, R2_UPLOAD_IMAGE_ACCESS_KEY_ID, R2_UPLOAD_IMAGE_SECRET_ACCESS_KEY, R2_UPLOAD_IMAGE_BUCKET_NAME (optional; for asset uploads)
+- ELEVENLABS_API_KEY (optional but recommended)
+- FAL_AI_KEY (optional; required for video)
+- RATE_LIMIT_DISABLED=true to bypass limits locally
+- RATE_LIMIT_MAX_PER_IP_PER_DAY (default 2)
+- UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (optional; production rate‑limit + user share index)
+- CLOUDFLARE_ACCOUNT_ID / R2_* (optional; asset uploads; app also works without R2 by keeping inline data URLs)
 
-## Local development
-- Vite dev server proxies /api → http://localhost:8787 (see vite.config.ts)
-- The Express API loads .env.local first, then .env
-- API keys are server-side only; the frontend calls proxied /api endpoints
+## Scripts
+- npm run dev:all – run vite + local API together
+- npm run build – production build
+- npm run typecheck – strict TS
 
-## Production deployment (Vercel)
-- The /api folder provides serverless functions for all routes used by the app
-- Configure environment variables in Vercel → Settings → Environment Variables
-- Deploy as usual; ensure your frontend points to the same /api paths
+## Deployment (Vercel)
+- All API endpoints are provided via a single catch‑all serverless function under /api.
+- Add the env vars in Vercel → Settings → Environment Variables.
+- Deploy; the frontend continues to call the same /api routes.
 
-### Database (optional but recommended)
-- Set DATABASE_URL to a Neon Postgres URL to persist shares and their asset URLs
-- When set, the app will insert records into two tables using Drizzle ORM (serverless function) or direct SQL (dev server):
-  - shares(id, user_id, name, created_at)
-  - share_assets(id, share_id, kind, url, extra, created_at)
-- Migrations: a `drizzle.config.ts` is included if you want to generate SQL migrations locally with drizzle-kit
+## Important Routes
+- POST /api/gemini/logo, /palette, /typography, /imagery, /ad-copy, /video-prompt
+- POST /api/fal/veo3fast (Veo‑3‑Fast via fal.ai)
+- GET  /api/elevenlabs/voices; POST /api/elevenlabs/tts, /music
+- POST /api/guard/start (rate‑limit guard)
+- POST /api/r2/upload (optional)
 
-### Available API routes
-- POST /api/gemini/logo
-- POST /api/gemini/palette
-- POST /api/gemini/typography
-- POST /api/gemini/imagery
-- POST /api/gemini/ad-copy
-- GET  /api/elevenlabs/voices
-- POST /api/elevenlabs/tts
-- POST /api/elevenlabs/music
-- POST /api/guard/start              // rate-limit guard (Upstash optional)
-- POST /api/r2/upload                // Cloudflare R2 uploads (optional)
-- POST /api/share                    // create share link (requires Upstash)
-- GET  /api/share/:id                // fetch shared brand kit by id (Upstash)
-- GET  /api/user/shares?id=<userId>  // list share IDs for a user (Upstash)
-- POST /api/fal/veo3fast             // video generation via fal.ai
+## Quotas & Rate Limiting
+- Gemini hackathon free tier is 100 requests/day per project. For demos:
+  - Set RATE_LIMIT_DISABLED=true locally, or
+  - Use Upstash Redis in production and tune RATE_LIMIT_MAX_PER_IP_PER_DAY.
+- The UI shows friendly messages when quotas are hit; assets are cached client‑side during a session.
 
-## Rate limiting
-- To disable guard entirely (e.g., demos), set RATE_LIMIT_DISABLED=true
-- To enable, set Upstash creds and RATE_LIMIT_MAX_PER_IP_PER_DAY (default 2)
+## 2‑Minute Video Script (suggested)
+- 0:00 – One‑liner + click Random brand → fields auto‑fill (Gemini)
+- 0:15 – Generate Brand Kit → cards populate (logos, palette, typography, imagery)
+- 0:35 – Edit a logo with words → quick before/after (Gemini)
+- 0:50 – Ad copy appears → check Generate Ad Voiceover → play
+- 1:10 – Check Generate intro/outro music → play briefly
+- 1:25 – Generate Ad Video (Veo‑3‑Fast) → show clip in scaled player
+- 1:40 – Download Brand Kit → open ZIP: show images/, social/, audio/, ad‑video
+- 1:55 – Close with value prop
 
 ## Security
-- Secrets never reach the browser; they are used only on the server/serverless
-- .env.local and similar files are gitignored; only .env.example is committed
-- Share payloads contain no secrets; only safe metadata and generated assets
+- API keys are only used on the server/serverless functions; never shipped to the client.
+- .env.local is gitignored; .env.example documents required keys.
 
 ## Troubleshooting
-- TTS/music issues: ensure ELEVENLABS_API_KEY is valid; UI will gracefully degrade
-- Video generation: ensure FAL_AI_KEY is set; keep prompts short to avoid timeouts
-- R2 uploads: verify CLOUDFLARE_ACCOUNT_ID, R2_UPLOAD_IMAGE_ACCESS_KEY_ID, R2_UPLOAD_IMAGE_SECRET_ACCESS_KEY, R2_UPLOAD_IMAGE_BUCKET_NAME
-- Database: set DATABASE_URL; the app auto-creates tables on the dev server; on Vercel, use existing tables or run migrations
-- Tailwind: no CDN now; classes compile via Vite plugin. If you add new files, ensure paths are covered in tailwind.config.ts content
-- SEO: index.html includes OG/Twitter meta, manifest, favicons, and robots.txt. Update OG/Twitter site/creator handles as needed
-- Rate limit reached: set RATE_LIMIT_DISABLED=true for demos or raise the limit
+- No voices/music? Ensure ELEVENLABS_API_KEY is set and the checkboxes are ticked.
+- Video empty? Verify FAL_AI_KEY and try a shorter prompt.
+- Hitting limits? Set RATE_LIMIT_DISABLED=true locally or configure Upstash for production.
+- R2 issues? Leave R2 unset—app falls back to base64 data URLs and still downloads correctly.
+
+---
+
+MIT © 2025 – Built for the Nano Banana 48‑Hour Challenge

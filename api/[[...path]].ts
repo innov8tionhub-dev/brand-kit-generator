@@ -281,6 +281,34 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({ error: 'No edited image returned' });
     }
 
+    if (pathname === '/api/gemini/random-brand' && method === 'POST') {
+      const ai = getGenAI();
+      if (!ai) return res.status(500).json({ error: 'Gemini not configured' });
+      const prompt = `Create a fresh brand concept. Return JSON with: name (2-3 words), description (1-2 concise sentences), keywords (comma-separated list of 3-6 vibe words), and tone (one of: friendly, professional, bold, playful, inspirational).`;
+      const response: any = await ai.models.generateContent({
+        model: GEMINI_TEXT_MODEL,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING },
+              keywords: { type: Type.STRING },
+              tone: { type: Type.STRING },
+            },
+          },
+        },
+      });
+      let out: any;
+      try { out = JSON.parse(response?.text || '{}'); } catch { out = {}; }
+      if (!out?.name || !out?.description || !out?.keywords) {
+        out = { name: 'Solara Coffee', description: 'A modern, eco-friendly coffee brand for busy professionals.', keywords: 'minimalist, warm, friendly', tone: 'friendly' };
+      }
+      return res.json(out);
+    }
+
     if (pathname === '/api/gemini/ad-copy' && method === 'POST') {
       const body = await json(req);
       const { name, description, keywords, tone } = body || {};
@@ -481,11 +509,20 @@ If brand name is provided, tastefully weave it as on-screen text cues without qu
       if (!bucket) return res.status(500).json({ error: 'R2 bucket not configured' });
       const body = await json(req);
       const { base64, key, contentType = 'image/png' } = body || {};
-      if (!base64 || !key) return res.status(400).json({ error: 'Missing base64 or key' });
+
+      const allowedPrefixes = ['logos/', 'images/', 'social/', 'audio/'];
+      if (!base64 || !key || !allowedPrefixes.some(p => key.startsWith(p))) {
+        return res.status(400).json({ error: 'Invalid base64 or key' });
+      }
+
       const data = base64.includes(',') ? base64.split(',')[1] : base64;
       const fileBody = Buffer.from(data, 'base64');
       await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: fileBody, ContentType: contentType }));
-      const url = `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${bucket}/${key}`;
+
+      const publicBase = (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+      const fallbackBase = `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+      const base = publicBase || fallbackBase;
+      const url = `${base}/${bucket}/${key}`;
       return res.json({ url });
     }
 

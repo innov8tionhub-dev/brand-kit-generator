@@ -12,22 +12,45 @@ async function fetchAsArrayBuffer(url: string): Promise<ArrayBuffer> {
   return await res.arrayBuffer();
 }
 
+async function fetchTyped(url: string): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch asset: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  const contentType = res.headers.get('content-type');
+  return { buffer, contentType };
+}
+
 export async function downloadBrandKit(brandKit: BrandKit) {
   const zip = new JSZip();
 
   // Metadata (no secrets)
+  const refType = (s: string) => /^https?:\/\//i.test(s) ? 'url' : 'inline';
   const metadata = {
     name: brandKit.name,
     colorPalette: brandKit.colorPalette,
     typography: brandKit.typography,
-    logos: brandKit.logos ? { ...brandKit.logos } : undefined,
-    ad: brandKit.ad ? {
-      copyScript: brandKit.ad.copyScript,
-      voiceoverText: brandKit.ad.voiceoverText,
-      voiceId: brandKit.ad.voiceId,
-      voiceName: brandKit.ad.voiceName,
-      hasAudio: !!brandKit.ad.audioUrl,
-    } : undefined,
+    assets: {
+      logos: brandKit.logos
+        ? {
+            primary: refType(brandKit.logos.primary),
+            secondary: refType(brandKit.logos.secondary),
+            submark: refType(brandKit.logos.submark),
+          }
+        : { primary: refType(brandKit.logo) },
+      imageryCount: brandKit.imagery.length,
+      socialBackdrops: (brandKit.socialBackdrops || []).map((bg) => ({ platform: bg.platform, type: refType(bg.image) })),
+      audio: {
+        hasIntro: !!brandKit.audio.intro.url,
+        hasOutro: !!brandKit.audio.outro.url,
+      },
+    },
+    ad: brandKit.ad
+      ? {
+          voiceId: brandKit.ad.voiceId,
+          voiceName: brandKit.ad.voiceName,
+          hasVoiceoverAudio: !!brandKit.ad.audioUrl,
+        }
+      : undefined,
     adVideo: brandKit.adVideo ? { url: brandKit.adVideo.url, aspectRatio: brandKit.adVideo.aspectRatio } : undefined,
     generatedAt: new Date().toISOString(),
   };
@@ -91,25 +114,47 @@ export async function downloadBrandKit(brandKit: BrandKit) {
     }
   }
 
-  // Audio
-  const audioFolder = zip.folder('audio');
-  if (audioFolder) {
-    try {
-      const introBuf = await fetchAsArrayBuffer(brandKit.audio.intro.url);
-      audioFolder.file('intro.mp3', introBuf);
-    } catch {}
-    try {
-      const outroBuf = await fetchAsArrayBuffer(brandKit.audio.outro.url);
-      audioFolder.file('outro.mp3', outroBuf);
-    } catch {}
+// Audio — only include files that actually exist
+const isFetchable = (u?: string) => !!u && (/^https?:\/\//i.test(u) || u.startsWith('blob:'));
+let audioFolder: JSZip | null = null;
+const ensureAudio = (): JSZip => (audioFolder ??= (zip.folder('audio') as unknown as JSZip));
 
-    if (brandKit.ad?.audioUrl) {
-      try {
-        const adBuf = await fetchAsArrayBuffer(brandKit.ad.audioUrl);
-        audioFolder.file('ad-voiceover.mp3', adBuf);
-      } catch {}
-    }
+try {
+  if (isFetchable(brandKit.audio.intro.url)) {
+    const introBuf = await fetchAsArrayBuffer(brandKit.audio.intro.url);
+    ensureAudio().file('intro.mp3', introBuf);
   }
+} catch {}
+
+try {
+  if (isFetchable(brandKit.audio.outro.url)) {
+    const outroBuf = await fetchAsArrayBuffer(brandKit.audio.outro.url);
+    ensureAudio().file('outro.mp3', outroBuf);
+  }
+} catch {}
+
+if (brandKit.ad?.audioUrl) {
+  try {
+    if (isFetchable(brandKit.ad.audioUrl)) {
+      const { buffer, contentType } = await fetchTyped(brandKit.ad.audioUrl);
+      const ext = contentType?.includes('wav') ? 'wav' : contentType?.includes('ogg') ? 'ogg' : 'mp3';
+      ensureAudio().file(`ad-voiceover.${ext}`, buffer);
+    }
+  } catch {}
+}
+
+  // Video (if available)
+  try {
+    if (brandKit.adVideo?.url && isFetchable(brandKit.adVideo.url)) {
+      const { buffer, contentType } = await fetchTyped(brandKit.adVideo.url);
+      let ext = 'mp4';
+      if (contentType?.includes('webm')) ext = 'webm';
+      else if (contentType?.includes('quicktime') || /\.mov(\?|$)/i.test(brandKit.adVideo.url)) ext = 'mov';
+      else if (/\.webm(\?|$)/i.test(brandKit.adVideo.url)) ext = 'webm';
+      else if (/\.mp4(\?|$)/i.test(brandKit.adVideo.url)) ext = 'mp4';
+      zip.file(`ad-video.${ext}`, buffer);
+    }
+  } catch {}
 
   const blob = await zip.generateAsync({ type: 'blob' });
   const filename = `brand-kit-${slugify(brandKit.name)}-${Date.now()}.zip`;

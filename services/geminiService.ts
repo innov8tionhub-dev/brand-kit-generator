@@ -141,3 +141,10 @@ export const generateLogoVariants = async (name: string, description: string, ke
   const { primary, secondary, submark } = await r.json();
   return { primary, secondary, submark };
 };
+
+export async function generateRandomBrand(): Promise<{ name: string; description: string; keywords: string; tone?: string }> {
+  const r = await fetch('/api/gemini/random-brand', { method: 'POST' });
+  if (!r.ok) throw new Error('Random brand generation failed');
+  const data = await r.json();
+  return data;
+}

@@ -5,6 +5,7 @@ import type { VoiceOption } from '../constants/voices';
 import { SparklesIcon } from './icons/SparklesIcon';
 import { VOICES as CURATED_VOICES, DEFAULT_VOICE_ID } from '../constants/voices';
 import { fetchVoices } from '../services/elevenLabsService';
+import { generateRandomBrand } from '../services/geminiService';
 
 interface BrandInputFormProps {
     onGenerate: (data: BrandInput) => void;
@@ -12,48 +13,53 @@ interface BrandInputFormProps {
 }
 
 const InputField: React.FC<{ id: string; label: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder: string }> = ({ id, label, value, onChange, placeholder }) => (
-    <div>
-        <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
+    <div className="space-y-2">
+        <label htmlFor={id} className="block text-sm font-semibold text-gray-200 mb-1" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}>{label}</label>
         <input
             type="text"
             id={id}
             value={value}
             onChange={onChange}
             placeholder={placeholder}
-            className="w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500 transition"
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-brand-yellow focus:border-brand-yellow focus:bg-gray-750 transition-all duration-200 shadow-sm hover:shadow-md"
             required
         />
     </div>
 );
 
 const TextAreaField: React.FC<{ id: string; label: string; value: string; onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; placeholder: string }> = ({ id, label, value, onChange, placeholder }) => (
-    <div>
-        <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
+    <div className="space-y-2">
+        <label htmlFor={id} className="block text-sm font-semibold text-gray-200 mb-1" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}>{label}</label>
         <textarea
             id={id}
-            rows={3}
+            rows={4}
             value={value}
             onChange={onChange}
             placeholder={placeholder}
-            className="w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500 transition"
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-brand-yellow focus:border-brand-yellow focus:bg-gray-750 transition-all duration-200 shadow-sm hover:shadow-md resize-none"
             required
         />
     </div>
 );
 
 const SelectField: React.FC<{ id: string; label: string; value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void; options: { value: string; label: string }[] }> = ({ id, label, value, onChange, options }) => (
-    <div>
-        <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
-        <select
-            id={id}
-            value={value}
-            onChange={onChange}
-            className="w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500 transition"
-        >
-            {options.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-        </select>
+    <div className="space-y-2">
+        <label htmlFor={id} className="block text-sm font-semibold text-gray-200 mb-1" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}>{label}</label>
+        <div className="relative">
+          <select
+              id={id}
+              value={value}
+              onChange={onChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg pl-4 pr-10 py-3 text-white focus:ring-2 focus:ring-brand-yellow focus:border-brand-yellow focus:bg-gray-750 transition-all duration-200 shadow-sm hover:shadow-md appearance-none cursor-pointer"
+          >
+              {options.map(opt => (
+                  <option key={opt.value} value={opt.value} className="bg-gray-800">{opt.label}</option>
+              ))}
+          </select>
+          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-400"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.155l3.71-2.924a.75.75 0 11.94 1.172l-4.24 3.344a.75.75 0 01-.94 0L5.25 8.4a.75.75 0 01-.02-1.19z" clipRule="evenodd"/></svg>
+          </span>
+        </div>
     </div>
 );
 
@@ -67,8 +73,8 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
         tone: 'friendly',
         voiceId: DEFAULT_VOICE_ID,
         voiceName: CURATED_VOICES.find(v => v.id === DEFAULT_VOICE_ID)?.name,
-        skipMusic: true,
-        generateVoiceover: false,
+        skipMusic: false, // default ON (generate music)
+        generateVoiceover: true, // default ON
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -78,7 +84,12 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
 
     const handleCheckbox = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { id, checked } = e.target;
-        setFormData(prev => ({ ...prev, [id]: checked }));
+        if (id === 'generateMusic') {
+            // store as skipMusic inverted
+            setFormData(prev => ({ ...prev, skipMusic: !checked }));
+            return;
+        }
+        setFormData(prev => ({ ...prev, [id]: checked } as any));
     };
 
     const handleVoiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -192,31 +203,49 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
 
     return (
         <div className="max-w-2xl mx-auto">
-            <form onSubmit={handleSubmit} className="space-y-6 p-8 bg-gray-800/50 rounded-xl shadow-2xl border border-gray-700">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-white">Enter Brand Details</h3>
+            <form onSubmit={handleSubmit} className="space-y-8 p-8 bg-gradient-to-b from-gray-800/80 to-gray-900/80 rounded-2xl shadow-2xl border border-gray-700/50 backdrop-blur-sm">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-xl font-bold text-white" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}>Enter Brand Details</h3>
                   <button
                     type="button"
-                    onClick={() => {
-                      const names = ['Solara Coffee', 'NovaFit', 'Lumen AI', 'Breeze Bank', 'CozyCart'];
-                      const descs = [
-                        'A modern, eco-friendly coffee brand for busy professionals.',
-                        'A smart fitness companion that makes workouts simple and fun.',
-                        'An AI assistant that streamlines creative workflows.',
-                        'A digital-first, fee-free bank with personality.',
-                        'A delightful shopping app focused on curated essentials.',
-                      ];
-                      const vibes = ['minimalist, warm, friendly', 'bold, energetic, confident', 'clean, professional, trustworthy', 'playful, modern, vibrant'];
-                      const random = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
-                      setFormData(prev => ({
-                        ...prev,
-                        name: random(names),
-                        description: random(descs),
-                        keywords: random(vibes),
-                        tone: 'friendly',
-                      }));
+                    onClick={async () => {
+                      try {
+                        (document.activeElement as HTMLElement)?.blur?.();
+                        setIsPreviewing(false);
+                        // Small UX: show loading state by temporarily changing label via aria-busy
+                        const btn = (event?.currentTarget as HTMLButtonElement | undefined);
+                        if (btn) btn.setAttribute('aria-busy', 'true');
+                        const rb = await generateRandomBrand();
+                        setFormData(prev => ({
+                          ...prev,
+                          name: rb.name || prev.name,
+                          description: rb.description || prev.description,
+                          keywords: rb.keywords || prev.keywords,
+                          tone: (rb.tone as any) || prev.tone || 'friendly',
+                        }));
+                        if (btn) btn.removeAttribute('aria-busy');
+                      } catch {
+                        // Fallback: keep existing local behavior if API fails
+                        const names = ['Solara Coffee', 'NovaFit', 'Lumen AI', 'Breeze Bank', 'CozyCart'];
+                        const descs = [
+                          'A modern, eco-friendly coffee brand for busy professionals.',
+                          'A smart fitness companion that makes workouts simple and fun.',
+                          'An AI assistant that streamlines creative workflows.',
+                          'A digital-first, fee-free bank with personality.',
+                          'A delightful shopping app focused on curated essentials.',
+                        ];
+                        const vibes = ['minimalist, warm, friendly', 'bold, energetic, confident', 'clean, professional, trustworthy', 'playful, modern, vibrant'];
+                        const random = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+                        setFormData(prev => ({
+                          ...prev,
+                          name: random(names),
+                          description: random(descs),
+                          keywords: random(vibes),
+                          tone: 'friendly',
+                        }));
+                      }
                     }}
-                    className="px-3 py-1.5 text-sm rounded-md bg-gray-700 hover:bg-gray-600"
+className="brand-secondary-button inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-yellow/50 transition-all duration-200 [aria-busy='true']:opacity-60 [aria-busy='true']:cursor-wait"
                   >
                     Random brand
                   </button>
@@ -241,12 +270,10 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                       type="button"
                       onClick={() => previewVoice(voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl)}
                       disabled={isPreviewing || !voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl}
-                      className={`px-4 py-2 text-sm rounded-md ${
-                        !voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl 
-                          ? 'bg-gray-600 cursor-not-allowed text-gray-400' 
-                          : isPreviewing 
-                            ? 'bg-gray-600 cursor-not-allowed' 
-                            : 'bg-gray-700 hover:bg-gray-600'
+className={`inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-brand-blue hover:bg-brand-blue/90 focus:outline-none focus:ring-2 focus:ring-brand-blue/50 transition-all duration-200 shadow-sm hover:shadow-lg ${
+                        !voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl || isPreviewing
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:scale-105'
                       }`}
                       title={!voiceOptions.find(v => v.id === formData.voiceId)?.previewUrl ? 'No preview available for this voice' : ''}
                     >
@@ -263,7 +290,7 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                       type="button"
                       onClick={stopPreview}
                       disabled={!isPreviewing}
-                      className={`px-4 py-2 text-sm rounded-md ${!isPreviewing ? 'bg-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'}`}
+className={`inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold border-2 border-brand-yellow text-brand-yellow hover:bg-brand-yellow hover:text-black focus:outline-none focus:ring-2 focus:ring-brand-yellow/50 transition-all duration-200 shadow-sm ${!isPreviewing ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg hover:scale-105'}`}
                     >
                       Stop Preview
                     </button>
@@ -284,20 +311,21 @@ export const BrandInputForm: React.FC<BrandInputFormProps> = ({ onGenerate, isLo
                     ]}
                 />
 
-                <div className="flex items-center gap-2">
-                  <input id="skipMusic" type="checkbox" checked={!!formData.skipMusic} onChange={handleCheckbox} />
-                  <label htmlFor="skipMusic" className="text-sm text-gray-300">Skip intro/outro music</label>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input id="generateVoiceover" type="checkbox" checked={!!formData.generateVoiceover} onChange={handleCheckbox} />
-                  <label htmlFor="generateVoiceover" className="text-sm text-gray-300">Generate ad voiceover</label>
+                <div className="space-y-4 p-4 bg-gray-800 border border-gray-700 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <input id="generateMusic" type="checkbox" checked={!formData.skipMusic} onChange={handleCheckbox} className="w-4 h-4 text-brand-yellow bg-gray-800 border-gray-600 rounded focus:ring-brand-yellow focus:ring-2" />
+                    <label htmlFor="generateMusic" className="text-sm font-medium text-gray-200" style={{ fontFamily: 'Open Sans, system-ui' }}>Generate intro/outro music</label>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input id="generateVoiceover" type="checkbox" checked={!!formData.generateVoiceover} onChange={handleCheckbox} className="w-4 h-4 text-brand-yellow bg-gray-800 border-gray-600 rounded focus:ring-brand-yellow focus:ring-2" />
+                    <label htmlFor="generateVoiceover" className="text-sm font-medium text-gray-200" style={{ fontFamily: 'Open Sans, system-ui' }}>Generate Ad Voiceover</label>
+                  </div>
                 </div>
 
                 <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-colors"
+className="w-full brand-gradient-button inline-flex items-center justify-center gap-3 rounded-xl px-8 py-4 text-lg font-bold focus:outline-none focus:ring-4 focus:ring-brand-yellow focus:ring-offset-2 focus:ring-offset-gray-900 transition-all duration-300" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}
                 >
                     <SparklesIcon className="w-5 h-5" />
                     {isLoading ? 'Generating...' : 'Generate Brand Kit'}

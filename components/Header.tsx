@@ -11,7 +11,7 @@ export const Header: React.FC = () => {
                 <img onError={(e) => { (e.currentTarget as HTMLImageElement).style.display='none'; }} src={logoSrc} alt="Logo" className="w-12 h-12"/>
                 <SparklesIcon className="w-10 h-10 text-brand-yellow hidden"/>
                 <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight" style={{ fontFamily: 'Montserrat, ui-sans-serif' }}>
-                    <span className="bg-gradient-to-r from-brand-blue via-brand-yellow to-brand-blue text-transparent bg-clip-text drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                    <span className="brand-gradient-text">
                       Brand Kit Generator
                     </span>
                 </h1>

@@ -304,6 +304,42 @@ app.post('/api/gemini/edit-image', async (req, res) => {
   }
 });
 
+app.post('/api/gemini/random-brand', async (req, res) => {
+  try {
+    if (!genAI) return res.status(500).json({ error: 'Gemini not configured' });
+    const prompt = `Create a fresh brand concept. Return JSON with: name (2-3 words), description (1-2 concise sentences), keywords (comma-separated list of 3-6 vibe words), and tone (one of: friendly, professional, bold, playful, inspirational).`;
+    const response = await genAI.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            description: { type: Type.STRING },
+            keywords: { type: Type.STRING },
+            tone: { type: Type.STRING },
+          }
+        }
+      }
+    });
+    let json;
+    try { json = JSON.parse(response.text || '{}'); } catch { json = {}; }
+    if (!json?.name || !json?.description || !json?.keywords) {
+      json = {
+        name: 'Solara Coffee',
+        description: 'A modern, eco-friendly coffee brand for busy professionals.',
+        keywords: 'minimalist, warm, friendly',
+        tone: 'friendly'
+      };
+    }
+    res.json(json);
+  } catch (e) {
+    res.json({ name: 'Solara Coffee', description: 'A modern, eco-friendly coffee brand for busy professionals.', keywords: 'minimalist, warm, friendly', tone: 'friendly' });
+  }
+});
+
 app.post('/api/gemini/ad-copy', async (req, res) => {
   try {
     if (!genAI) return res.status(500).json({ error: 'Gemini not configured' });
@@ -520,7 +556,12 @@ app.post('/api/r2/upload', async (req, res) => {
   try {
     if (!r2) return res.status(500).json({ error: 'R2 not configured' });
     const { base64, key, contentType = 'image/png' } = req.body || {};
-    if (!base64 || !key) return res.status(400).json({ error: 'Missing base64 or key' });
+
+    const allowedPrefixes = ['logos/', 'images/', 'social/', 'audio/'];
+    if (!base64 || !key || !allowedPrefixes.some(p => key.startsWith(p))) {
+      return res.status(400).json({ error: 'Invalid base64 or key' });
+    }
+
     const data = base64.includes(',') ? base64.split(',')[1] : base64;
     const body = Buffer.from(data, 'base64');
     await r2.send(new PutObjectCommand({
@@ -529,7 +570,11 @@ app.post('/api/r2/upload', async (req, res) => {
       Body: body,
       ContentType: contentType,
     }));
-    const url = `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.R2_UPLOAD_IMAGE_BUCKET_NAME}/${key}`;
+
+    const publicBase = (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+    const fallbackBase = `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+    const base = publicBase || fallbackBase;
+    const url = `${base}/${process.env.R2_UPLOAD_IMAGE_BUCKET_NAME}/${key}`;
     res.json({ url });
   } catch (e) {
     console.error('R2 upload error:', e);

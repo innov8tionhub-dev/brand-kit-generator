@@ -2,15 +2,12 @@
 import React, { useState, useCallback } from 'react';
 import { BrandInputForm } from './components/BrandInputForm';
 import { BrandKitDisplay } from './components/BrandKitDisplay';
-import { shareBrandKit } from './utils/share';
 import { ToastHost } from './components/ToastHost';
 import { NotFound } from './components/NotFound';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { MyShares } from './components/MyShares';
 import { Header } from './components/Header';
 import { Loader } from './components/Loader';
 import { generateLogo, generateColorPalette, generateTypography, generateBrandImagery, generateAdCopy, generateSocialBackdrops, generateLogoVariants } from './services/geminiService';
-import { uploadToR2 } from './utils/r2';
 import { generateMusic, generateVoiceover } from './services/elevenLabsService';
 import type { BrandInput, BrandKit } from './types';
 import { GenerationStatus } from './types';
@@ -22,7 +19,6 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isSharedView, setIsSharedView] = useState(false);
     const [shareNotFound, setShareNotFound] = useState(false);
-    const [showShares, setShowShares] = useState(false);
     const blobUrlsRef = React.useRef<string[]>([]);
 
     React.useEffect(() => {
@@ -73,33 +69,12 @@ const App: React.FC = () => {
                 generateSocialBackdrops(data.name, data.description, data.keywords),
             ]);
 
-            // Persist logos & images to R2 (best-effort). If upload fails, keep base64.
-            let logos = logosRaw;
-            try {
-                const [p, s, m] = await Promise.all([
-                    uploadToR2(`data:image/png;base64,${logosRaw.primary}`, `logos/${slug}-primary-${crypto.randomUUID()}.png`, 'image/png'),
-                    uploadToR2(`data:image/png;base64,${logosRaw.secondary}`, `logos/${slug}-secondary-${crypto.randomUUID()}.png`, 'image/png'),
-                    uploadToR2(`data:image/png;base64,${logosRaw.submark}`, `logos/${slug}-submark-${crypto.randomUUID()}.png`, 'image/png'),
-                ]);
-                logos = { primary: p, secondary: s, submark: m } as any;
-            } catch {}
+            // Use base64 inline images (fallback to previous behavior). Avoid R2 URLs to ensure display works everywhere.
+            const logos = logosRaw;
 
-            let imagery = imageryRaw;
-            try {
-                imagery = await Promise.all(
-                    imageryRaw.map((img, i) => uploadToR2(`data:image/png;base64,${img}`, `images/${slug}-${i+1}-${crypto.randomUUID()}.png`, 'image/png'))
-                );
-            } catch {}
+            const imagery = imageryRaw;
 
-            let socialBackdrops = socialBackdropsRaw;
-            try {
-                socialBackdrops = await Promise.all(
-                    socialBackdropsRaw.map((bg, idx) => (async () => ({
-                        platform: bg.platform,
-                        image: await uploadToR2(`data:image/jpeg;base64,${bg.image}`, `social/${bg.platform}-${idx}-${crypto.randomUUID()}.jpg`, 'image/jpeg')
-                    }))())
-                );
-            } catch {}
+            const socialBackdrops = socialBackdropsRaw;
 
             // Generate ad copy then voiceover (sequential, since TTS needs the text)
             let adScript = '';
@@ -211,15 +186,6 @@ const App: React.FC = () => {
                 <ErrorBoundary>
                 <Header />
                 <div className="mt-8">
-                    <div className="flex justify-end mb-3">
-<button onClick={()=>setShowShares(s=>!s)}
-                        className="px-4 py-2 rounded-md cursor-pointer bg-gradient-to-r from-brand-blue to-brand-yellow text-white hover:from-brand-yellow hover:to-brand-blue hover:text-black shadow-md focus:outline-none focus:ring-2 focus:ring-brand-yellow/60 transition"
-                        style={{ fontFamily: 'Montserrat, ui-sans-serif' }}
-                      >{showShares ? 'Hide' : 'My Shares'}</button>
-                    </div>
-                    {showShares && (
-                      <div className="mb-6"><MyShares /></div>
-                    )}
                     {isSharedView && (
                         <div className="mb-4 p-3 rounded bg-gray-800 text-xs text-gray-300">
                             Shared read-only view. To create your own, refresh without the share parameter.
@@ -232,8 +198,8 @@ const App: React.FC = () => {
                 )}
             </ErrorBoundary>
             </main>
-             <footer className="text-center py-6 text-gray-500 text-sm">
-                <p>Powered by Google Gemini (Nano Banana), ElevenLabs, and FAL AI (Veo-3-Fast).</p>
+            <footer className="text-center py-6 text-gray-500 text-sm">
+                <p>Powered by Google Gemini, ElevenLabs, and FAL AI | Brand Kit Generator</p>
             </footer>
         </div>
     );
